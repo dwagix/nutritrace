@@ -70,12 +70,12 @@
   // OAuth, Google Health Web API, on-device Health Connect) since all
   // three flow through the same server-side data plumbing.
   function isSourceEnabled(m) {
-    if (!m.sources) return true;
-    return m.sources.some(s =>
-      (s === 'fitbit'   && $fitbitFamilyEnabled) ||
-      (s === 'garmin'   && $garminEnabled)       ||
-      (s === 'withings' && $withingsEnabled)
-    );
+    // Per explicit product decision: metric cards always show regardless
+    // of provider/integration status (see anyAvailable note further
+    // down). Kept as a named function rather than inlining `true` at
+    // each of its 5 call sites, in case a real per-metric-source need
+    // resurfaces later.
+    return true;
   }
 
   function isVisible(metricId) {
@@ -992,19 +992,26 @@
   // managed from the Android app (Settings → Wellness card is gated by
   // isNative); the web just reflects whatever the user enabled there.
   $: healthConnectAvailable = $healthConnectEnabled;
-  $: anyAvailable      = fitbitAvailable || withingsAvailable || garminAvailable || healthConnectAvailable;
+  // Also true when there's already federation data for today (steps,
+  // distance, weight, etc. pushed via write:wellness-metrics /
+  // write:body-measurements) — a federation-only setup can have zero
+  // Per explicit product decision: the Wellness page always shows all
+  // four tabs with their full card grids, regardless of whether any
+  // OAuth provider is enabled/connected or whether data exists yet for
+  // the selected day. "Activity Tracking" (the master toggle governing
+  // whether the Wellness nav tab appears at all) is the only gate; once
+  // inside, integration status plays no further role in what renders.
+  // Cards with no value for the day simply show "—" (already handled by
+  // each metric card's existing loadingData/fmt-null branches).
+  $: anyAvailable = true;
   // Count the number of enabled providers so the left-rail can
   // hide its 'Providers' heading when there's only one — no need
   // for a section caption above a single lonely row.
   $: _providerCount = [fitbitAvailable, withingsAvailable, garminAvailable, healthConnectAvailable]
     .filter(Boolean).length;
 
-  // Sliding pill: ordered list of visible tabs + active index
-  // Garmin contributes to activity/sleep/heart tabs alongside Fitbit
-  $: _wlTabList = [
-    ...(fitbitAvailable || garminAvailable || healthConnectAvailable ? ['activity', 'sleep', 'heart'] : []),
-    ...(withingsAvailable ? ['body'] : []),
-  ];
+  // Sliding pill: all four tabs always shown (see note above)
+  $: _wlTabList = ['activity', 'sleep', 'heart', 'body'];
   $: _wlActiveIdx  = Math.max(0, _wlTabList.indexOf(activeTab));
   // Pill position: measure actual tab button positions for pixel-perfect alignment
   let _tabBarEl = null;
@@ -1022,13 +1029,6 @@
   $: if (_wlActiveIdx >= 0 && _tabBarEl) { tick().then(_updatePill); }
   onMount(() => { tick().then(_updatePill); window.addEventListener('resize', _updatePill); });
   onDestroy(() => { window.removeEventListener('resize', _updatePill); });
-
-  // Auto-correct activeTab when an integration's availability changes
-  $: if (status !== null && withingsStatus !== null && garminStatus !== null) {
-    const isActivityTab = activeTab === 'activity' || activeTab === 'sleep' || activeTab === 'heart';
-    if (isActivityTab && !fitbitAvailable && !garminAvailable && !healthConnectAvailable) activeTab = withingsAvailable ? 'body' : 'activity';
-    if (activeTab === 'body' && !withingsAvailable && !healthConnectAvailable) activeTab = (fitbitAvailable || garminAvailable || healthConnectAvailable) ? 'activity' : 'body';
-  }
 
   // ── Date navigation ────────────────────────────────────────────────────────
   function prevDay() {
@@ -1128,23 +1128,26 @@
     // Google-Health-only or HC-only user landed on a blank Wellness tab
     // and had to flip to Yesterday and back to trigger loadData via the
     // prevDay/nextDay path.
-    if (status.connected || garminStatus?.connected || $fitbitFamilyEnabled) {
-      await loadData(); // loadData already calls loadWorkouts()
-      if (isToday) {
-        const key = `wl_wellness_lastSync_${dateStr}`;
-        const last = localStorage.getItem(key);
-        const cooldownMs = 15 * 60 * 1000;
-        if (!last || Date.now() - Number(last) > cooldownMs) {
-          const fitbitMode  = $fitbitSyncMode ;
-          const garminMode_ = $garminSyncMode ;
-          const hcMode_     = $healthConnectSyncMode;
-          if (status.connected && fitbitMode === 'auto')        { await sync(true); syncWorkouts(); }
-          if (garminStatus?.connected && garminMode_ === 'auto') await syncGarmin(true);
-          if ($healthConnectEnabled && hcMode_ === 'auto')       syncHealthConnectManual();
-        }
+    // Always load — don't gate the fetch on OAuth connection status.
+    // `data` can be populated by a federation push (write:wellness-metrics)
+    // with no Fitbit/Garmin/Health-Connect connection at all; the render
+    // gates further down decide what to show based on what comes back,
+    // so the fetch itself should never be skipped. (Previously gated on
+    // `status.connected || garminStatus?.connected || $fitbitFamilyEnabled`,
+    // which left `data` permanently empty for federation-only setups.)
+    await loadData(); // loadData already calls loadWorkouts()
+    if (isToday) {
+      const key = `wl_wellness_lastSync_${dateStr}`;
+      const last = localStorage.getItem(key);
+      const cooldownMs = 15 * 60 * 1000;
+      if (!last || Date.now() - Number(last) > cooldownMs) {
+        const fitbitMode  = $fitbitSyncMode ;
+        const garminMode_ = $garminSyncMode ;
+        const hcMode_     = $healthConnectSyncMode;
+        if (status.connected && fitbitMode === 'auto')        { await sync(true); syncWorkouts(); }
+        if (garminStatus?.connected && garminMode_ === 'auto') await syncGarmin(true);
+        if ($healthConnectEnabled && hcMode_ === 'auto')       syncHealthConnectManual();
       }
-    } else {
-      loadingData = false;
     }
   }
 
@@ -1412,18 +1415,20 @@
   // ── Merged display data: only include data from enabled integrations ─────────
   $: displayData = (() => {
     const merged = {};
-    if ($garminEnabled || (isNative && Object.keys(garminData).length)) {
-      for (const [k, v] of Object.entries(garminData)) {
-        if (v != null) merged[k] = v;
-      }
+    // Merge unconditionally — `garminData`/`data` are already scoped to
+    // this user by the server, and can be non-empty from a federation
+    // push (write:wellness-metrics / write:body-measurements) even when
+    // no OAuth provider is enabled. Gating the merge on $garminEnabled /
+    // $fitbitFamilyEnabled (as before) meant federation-only data was
+    // fetched successfully but then silently discarded right here.
+    for (const [k, v] of Object.entries(garminData)) {
+      if (v != null) merged[k] = v;
     }
-    if ($fitbitFamilyEnabled || (isNative && Object.keys(data).length)) {
-      for (const [k, v] of Object.entries(data)) {
-        if (v != null) {
-          // Garmin sleep_score is device-measured; don't let Fitbit's estimate overwrite it
-          if (k === 'sleep_score' && merged[k] != null) continue;
-          merged[k] = v;
-        }
+    for (const [k, v] of Object.entries(data)) {
+      if (v != null) {
+        // Garmin sleep_score is device-measured; don't let Fitbit's estimate overwrite it
+        if (k === 'sleep_score' && merged[k] != null) continue;
+        merged[k] = v;
       }
     }
     // Calibration overrides — when actual Fitbit values are seeded, they take
@@ -1522,24 +1527,10 @@
         <span class="material-symbols-rounded spin">autorenew</span>
       </div>
 
-    <!-- ── Nothing configured ── -->
-    {:else if !anyAvailable}
-      <div class="connect-card">
-        <div class="connect-icon-wrap">
-          <span class="material-symbols-rounded connect-icon">monitor_heart</span>
-        </div>
-        <h2 class="connect-title">{$_('wellness_page.empty.no_integrations')}</h2>
-        <p class="connect-desc">{@html $_('wellness_page.empty.no_integrations_desc')}</p>
-        <div class="connect-chips">
-          <span class="connect-chip"><span class="material-symbols-rounded">directions_walk</span> {$_('wellness_page.chip.activity')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">bedtime</span> {$_('wellness_page.chip.sleep')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">favorite</span> {$_('wellness_page.chip.heart')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">scale</span> {$_('wellness_page.chip.body')}</span>
-        </div>
-      </div>
-
     {:else}
-      <!-- ── At least one integration configured — main UI ── -->
+      <!-- ── Main UI — always shown once loaded; integration status no
+           longer gates anything here (see anyAvailable note above) ── -->
+
 
       <!-- ── Desktop three-pane wrapper (≥1280px). On mobile .wl-body is a plain block and the rails are display:none. ── -->
       <div class="wl-body">
@@ -1650,22 +1641,18 @@
       <div class="tab-bar-wrap">
       <div class="tab-bar" bind:this={_tabBarEl}>
         <div class="tab-pill" style="left:{_wlPillLeft};width:{_wlPillWidth}"></div>
-        {#if fitbitAvailable || garminAvailable || healthConnectAvailable}
-          <button class="tab-btn" class:active={activeTab === 'activity'} on:click={() => activeTab = 'activity'}>
-            <span class="material-symbols-rounded tab-icon">directions_walk</span> {$_('wellness_page.chip.activity')}
-          </button>
-          <button class="tab-btn" class:active={activeTab === 'sleep'} on:click={() => activeTab = 'sleep'}>
-            <span class="material-symbols-rounded tab-icon">bedtime</span> {$_('wellness_page.chip.sleep')}
-          </button>
-          <button class="tab-btn" class:active={activeTab === 'heart'} on:click={() => activeTab = 'heart'}>
-            <span class="material-symbols-rounded tab-icon">favorite</span> {$_('wellness_page.chip.heart')}
-          </button>
-        {/if}
-        {#if withingsAvailable || healthConnectAvailable}
-          <button class="tab-btn" class:active={activeTab === 'body'} on:click={() => activeTab = 'body'}>
-            <span class="material-symbols-rounded tab-icon">monitor_weight</span> {$_('wellness_page.chip.body')}
-          </button>
-        {/if}
+        <button class="tab-btn" class:active={activeTab === 'activity'} on:click={() => activeTab = 'activity'}>
+          <span class="material-symbols-rounded tab-icon">directions_walk</span> {$_('wellness_page.chip.activity')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'sleep'} on:click={() => activeTab = 'sleep'}>
+          <span class="material-symbols-rounded tab-icon">bedtime</span> {$_('wellness_page.chip.sleep')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'heart'} on:click={() => activeTab = 'heart'}>
+          <span class="material-symbols-rounded tab-icon">favorite</span> {$_('wellness_page.chip.heart')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'body'} on:click={() => activeTab = 'body'}>
+          <span class="material-symbols-rounded tab-icon">monitor_weight</span> {$_('wellness_page.chip.body')}
+        </button>
       </div>
       </div>
       <div style="height:12px"></div>
@@ -1673,8 +1660,14 @@
       <!-- ── Fitbit tabs (Activity / Sleep / Heart) ── -->
       {#if activeTab === 'activity' || activeTab === 'sleep' || activeTab === 'heart'}
 
-        {#if !status.connected && !garminStatus?.connected && !withingsStatus?.connected && !$fitbitFamilyEnabled && !(isNative && _hasLocalData)}
-          <!-- Fitbit configured but not yet connected -->
+        {#if false}
+          <!-- Per explicit product decision, this "not connected" branch
+               is permanently disabled — Activity/Sleep/Heart always show
+               the metric grid below (with "—" for any unset value)
+               regardless of OAuth/provider status. Left in place rather
+               than deleted so the connect/OAuth flow itself (the
+               `connect()` function, `wellness_page.connect.*` strings)
+               isn't orphaned if this is ever revisited. -->
           {#if !status.configured}
             <div class="connect-card">
               <div class="connect-icon-wrap">
@@ -2158,7 +2151,8 @@
 
       <!-- ── Body tab (Withings) ── -->
       {:else if activeTab === 'body'}
-        {#if withingsStatus.connected || $fitbitFamilyEnabled || (isNative && _hasLocalData)}
+        {#if true}
+          <!-- Always renders — see anyAvailable note above. -->
           <div class="metric-grid">
             {#each BODY_METRICS.filter(m => isVisible(m.id)) as m}
               {@const raw = withingsData[m.id] ?? data[m.id] ?? null}
@@ -2557,7 +2551,7 @@
             {/if}
           {:else if activeTab === 'body'}
             <!-- Body Scan Scores (rail duplicate) -->
-            {#if (withingsStatus.connected || $fitbitFamilyEnabled || (isNative && _hasLocalData)) && BODY_SCORE_METRICS.filter(m => isVisible(m.id)).some(m => (withingsData[m.id] ?? data[m.id]) != null)}
+            {#if BODY_SCORE_METRICS.filter(m => isVisible(m.id)).some(m => (withingsData[m.id] ?? data[m.id]) != null)}
               <div class="wl-rail-only">
                 <div class="card" style="padding:16px">
                   <div class="sleep-stages-header" style="margin-bottom:12px">
