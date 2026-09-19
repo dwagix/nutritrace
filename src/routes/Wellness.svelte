@@ -16,81 +16,23 @@
   import HealthConnectIcon from '../components/icons/HealthConnectIcon.svelte';
   import WithingsIcon from '../components/icons/WithingsIcon.svelte';
   import GarminIcon from '../components/icons/GarminIcon.svelte';
+  import { ALL_METRICS, BODY_METRICS, BODY_SCORE_METRICS, GARMIN_METRICS } from '../lib/wellness-metrics.js';
 
   // ── Metric definitions ─────────────────────────────────────────────────────
   // sources: which integrations can supply this metric. Used to hide metrics
   // when their only source integration is disabled.
-  const ALL_METRICS = [
-    // Activity — both Fitbit and Garmin
-    { id: 'steps',            label: 'Steps',             unit: 'steps', group: 'activity', icon: 'directions_walk',       fmt: v => Math.round(v).toLocaleString(),  sources: ['fitbit','garmin'], desc: 'Total steps taken today.' },
-    { id: 'distance_km',      label: 'Distance',          unit: '',      group: 'activity', icon: 'straighten',            fmt: null,                                  sources: ['fitbit','garmin'], desc: 'Total distance covered today.' },
-    { id: 'floors',           label: 'Floors Climbed',    unit: 'floors',group: 'activity', icon: 'stairs',                fmt: v => Math.round(v),                   sources: ['fitbit','garmin'], desc: 'Floors climbed based on elevation gain detected by your device.' },
-    { id: 'active_minutes',   label: 'Active Minutes',    unit: 'min',   group: 'activity', icon: 'timer',                 fmt: v => Math.round(v),                   sources: ['fitbit','garmin'], desc: 'Time spent at a moderate or higher activity level.' },
-    { id: 'calories_out',     label: 'Calories Burned',   unit: 'kcal',  group: 'activity', icon: 'local_fire_department', fmt: v => Math.round(v).toLocaleString(),  sources: ['fitbit','garmin'], desc: 'Total calories burned including your resting metabolic rate.' },
-    // Activity — Fitbit only
-    { id: 'active_zone_minutes', label: 'Active Zone Min', unit: 'min',  group: 'activity', icon: 'local_fire_department', fmt: v => Math.round(v), sources: ['fitbit'], desc: 'Minutes spent in Fat Burn, Cardio, or Peak heart rate zones — counts double for Cardio and Peak.' },
-    // Activity — Garmin only
-    { id: 'moderate_intensity_min', label: 'Moderate Intensity', unit: 'min', group: 'activity', icon: 'directions_run', fmt: v => Math.round(v), sources: ['garmin'], desc: 'Time at moderate intensity (brisk walking, light cycling). WHO recommends 150–300 min/week.' },
-    { id: 'vigorous_intensity_min', label: 'Vigorous Intensity', unit: 'min', group: 'activity', icon: 'sprint',         fmt: v => Math.round(v), sources: ['garmin'], desc: 'Time at high intensity (running, hard effort). Counts double toward weekly activity targets.' },
-    // Sleep — both
-    { id: 'sleep_duration_min', label: 'Sleep Duration', unit: '',     group: 'sleep', icon: 'bedtime',               fmt: null,               sources: ['fitbit','garmin'], desc: 'Total time asleep last night. Adults generally need 7–9 hours.' },
-    { id: 'sleep_deep_min',     label: 'Deep Sleep',     unit: 'min',  group: 'sleep', icon: 'nights_stay',           fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Deep (slow-wave) sleep — the most restorative stage. Critical for physical recovery and immune function.' },
-    { id: 'sleep_light_min',    label: 'Light Sleep',    unit: 'min',  group: 'sleep', icon: 'cloud',                 fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Light sleep is the transition between wakefulness and deeper stages. Makes up the majority of most sleep cycles.' },
-    { id: 'sleep_rem_min',      label: 'REM Sleep',      unit: 'min',  group: 'sleep', icon: 'psychology',            fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'REM sleep supports memory consolidation, learning, and emotional regulation. Increases in later sleep cycles.' },
-    { id: 'sleep_wake_min',     label: 'Awake',          unit: 'min',  group: 'sleep', icon: 'wb_twilight',           fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Time spent awake or restless during the night. Brief awakenings are normal; frequent ones may signal poor sleep quality.' },
-    // Sleep — Fitbit only
-    { id: 'sleep_efficiency',   label: 'Sleep Efficiency', unit: '%',  group: 'sleep', icon: 'battery_charging_full', fmt: v => v.toFixed(0),  sources: ['fitbit'], desc: 'Percentage of time in bed actually spent asleep. Above 85% is generally considered good.' },
-    // Sleep — Garmin (device-measured); Fitbit (estimated from stages + SpO2 + HRV)
-    { id: 'sleep_score',        label: 'Sleep Score',    unit: '/100', group: 'sleep', icon: 'star',                  fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Overall sleep quality score out of 100. Factors in duration, sleep stage balance, SpO2, and HRV.' },
-    // Sleep Quality (Fitbit Public Preview Sleep Score redesign).
-    // Order: Time to Sound Sleep, Sound Sleep, Restlessness, Interruptions.
-    // Full Awakenings count is folded into the Interruptions card display
-    // ("X min · N moments") rather than its own tile.
-    { id: 'sleep_time_to_fall_asleep_min', label: 'Time to Sound Sleep', unit: 'min', group: 'sleep_quality', icon: 'snooze',           fmt: v => Math.round(v), sources: ['fitbit'], desc: 'How long it took to settle into deep sleep after first falling asleep. Lower is generally better.' },
-    { id: 'sleep_sound_sleep_min',         label: 'Sound Sleep',          unit: '',    group: 'sleep_quality', icon: 'self_improvement', fmt: v => { const h = Math.floor(v / 60); const m = Math.round(v % 60); return h ? `${h}h ${m}m` : `${m}m`; }, sources: ['fitbit'], desc: 'Longest stretch of uninterrupted sleep (LIGHT, DEEP, and REM with no wake events). Approximation of Fitbit\'s Sound Sleep metric — Fitbit\'s exact algorithm is proprietary and may use motion data the API does not expose.' },
-    { id: 'sleep_restlessness_min',        label: 'Restlessness',         unit: 'min', group: 'sleep_quality', icon: 'vibration',        fmt: v => Math.round(v), sources: ['fitbit'], desc: 'Brief stirring during the night — short AWAKE segments under 5 minutes. Approximation of Fitbit\'s Restlessness metric, which also incorporates motion data the API does not expose.' },
-    { id: 'sleep_interruptions_min',       label: 'Interruptions',        unit: 'min', group: 'sleep_quality', icon: 'pause_circle',     fmt: v => Math.round(v), sources: ['fitbit'], desc: 'Wake events of 5 minutes or longer that you\'re likely to remember. Card shows total minutes and the count of awakenings.' },
-    // sleep_full_awakenings stays in the dataset (for chart plotting if the
-    // user adds it in Statistics) but doesn't render as its own card —
-    // pulled into the Interruptions card subtitle instead. Hidden via
-    // `hideTile: true` so the metric grid skips it.
-    { id: 'sleep_full_awakenings',         label: 'Full Awakenings',      unit: '',    group: 'sleep_quality', icon: 'notifications_active', fmt: v => Math.round(v), sources: ['fitbit'], desc: 'Number of distinct wake events of 5 minutes or longer. Shown alongside Interruptions on the same card.', hideTile: true },
-    // Heart — both
-    { id: 'resting_hr',        label: 'Resting Heart Rate', unit: 'bpm',  group: 'heart', icon: 'favorite',       fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Heart rate when fully at rest. Lower is generally better — a downward trend over time reflects improving cardiovascular fitness.' },
-    // #205: Health Connect ingests a daily avg_heart_rate that had no card
-    // definition, so the metric silently existed in the local DB without a
-    // Wellness surface. Distinct from Resting Heart Rate (fully at rest) so
-    // the two live side by side in the Heart group.
-    //
-    // hideIfEmpty: only Health Connect populates avg_heart_rate today (Fitbit
-    // and Garmin cloud syncs write avg_hr per workout, not a daily aggregate
-    // to wellness_data). Rendering as a permanent no-data card for Fitbit /
-    // Garmin only users would just add visual noise; the flag is honored by
-    // the Heart tab filter below so the card appears only on days a value
-    // exists. When Fitbit / Garmin start writing daily avg_heart_rate, drop
-    // the flag and the card behaves like every other metric.
-    { id: 'avg_heart_rate',    label: 'Average Heart Rate', unit: 'bpm',  group: 'heart', icon: 'monitor_heart',  fmt: v => Math.round(v), sources: ['fitbit','garmin'], hideIfEmpty: true, desc: 'Average heart rate across the day from your wearable. Rises with activity, stress, and elevated body temperature; useful for spotting an unusually high or low day at a glance.' },
-    { id: 'spo2_avg',          label: 'SpO2',               unit: '%',    group: 'heart', icon: 'water_drop',     fmt: v => v.toFixed(1),  sources: ['fitbit','garmin'], desc: 'Blood oxygen saturation measured overnight. Healthy range is typically 95–100%. Dips below 90% may indicate sleep apnea.' },
-    { id: 'respiratory_rate',  label: 'Respiratory Rate',   unit: 'brpm', group: 'heart', icon: 'air',            fmt: v => v.toFixed(1),  sources: ['fitbit','garmin'], desc: 'Average breaths per minute during sleep. Normal adult range is 12–20 breaths/min. Elevated values may signal illness or stress.' },
-    { id: 'hrv_daily_rmssd',   label: 'HRV (RMSSD)',        unit: 'ms',   group: 'heart', icon: 'monitor_heart',  fmt: v => v.toFixed(1),  sources: ['fitbit','garmin'], desc: 'Heart rate variability — the variation between heartbeats. Higher values indicate better recovery and autonomic nervous system balance.' },
-    // Heart — Fitbit only
-    { id: 'skin_temp_variation', label: 'Skin Temp Var.', unit: '',     group: 'heart', icon: 'thermometer',    fmt: null, sources: ['fitbit'], desc: 'Nightly skin temperature variation from your personal baseline. Elevated readings can indicate illness or hormonal changes.' },
-    { id: 'vo2_max',             label: 'Cardio Fitness',  unit: '',     group: 'heart', icon: 'fitness_center', fmt: v => v.toFixed(1),  sources: ['fitbit'], desc: 'Estimated VO₂ Max — the maximum oxygen your body can use during exercise. Fitbit shows this as a range (e.g. 39–43 mL/kg/min). A key indicator of long-term cardiovascular health.' },
-    // Heart — Garmin only
-    { id: 'max_hr',           label: 'Max Heart Rate',     unit: 'bpm',       group: 'heart', icon: 'favorite',       fmt: v => Math.round(v), sources: ['garmin'], desc: 'Highest heart rate recorded during the day. Useful for tracking workout intensity and your true max effort.' },
-  ];
 
   // Returns true if at least one of this metric's source integrations is
   // enabled. The 'fitbit' bucket covers the whole fitbit family (Fitbit
   // OAuth, Google Health Web API, on-device Health Connect) since all
   // three flow through the same server-side data plumbing.
   function isSourceEnabled(m) {
-    if (!m.sources) return true;
-    return m.sources.some(s =>
-      (s === 'fitbit'   && $fitbitFamilyEnabled) ||
-      (s === 'garmin'   && $garminEnabled)       ||
-      (s === 'withings' && $withingsEnabled)
-    );
+    // Per explicit product decision: metric cards always show regardless
+    // of provider/integration status (see anyAvailable note further
+    // down). Kept as a named function rather than inlining `true` at
+    // each of its 5 call sites, in case a real per-metric-source need
+    // resurfaces later.
+    return true;
   }
 
   function isVisible(metricId) {
@@ -278,30 +220,8 @@
   }
 
   // ── Withings metric definitions ───────────────────────────────────────────
-  const BODY_METRICS = [
-    { id: 'weight_kg',     label: 'Weight',       unit: '', icon: 'monitor_weight',   fmt: null, desc: 'Current body weight from your scale.' },
-    { id: 'body_fat_pct',  label: 'Body Fat',     unit: '%', icon: 'percent',          fmt: v => v.toFixed(1), desc: 'Percentage of total body weight that is fat tissue. Healthy ranges vary by age and sex.' },
-    { id: 'muscle_mass_kg',label: 'Muscle Mass',  unit: '', icon: 'fitness_center',   fmt: null, desc: 'Total skeletal muscle mass. Higher values indicate better strength and metabolic health.' },
-    { id: 'bone_mass_kg',  label: 'Bone Mass',    unit: '', icon: 'emergency',         fmt: v => v.toFixed(2), desc: 'Estimated bone mineral content. Stable values are normal; significant drops may warrant discussion with your doctor.' },
-    { id: 'body_water_pct',label: 'Body Water',   unit: '', icon: 'water_drop',       fmt: null, desc: 'Total body water as a percentage of weight. Normal range is 45–65% depending on age and sex.' },
-    { id: 'lean_mass_kg',            label: 'Lean Mass',            unit: '', icon: 'person',           fmt: null, desc: 'Everything except fat — includes muscle, bone, organs, and water.' },
-    { id: 'fat_mass_kg',             label: 'Fat Mass',             unit: '', icon: 'scale',            fmt: null, desc: 'Total fat tissue weight. Tracking trends is more useful than individual readings.' },
-    { id: 'visceral_fat',            label: 'Visceral Fat',         unit: '', icon: 'favorite_border',  fmt: v => v.toFixed(1), desc: 'Fat stored around internal organs. Higher levels are linked to increased metabolic and cardiovascular risk.' },
-    { id: 'visceral_fat_index',      label: 'Visceral Fat Index',   unit: '', icon: 'favorite_border',  fmt: v => v.toFixed(1), desc: 'Indexed rating of visceral fat. Lower is better — a score under 13 is generally considered healthy.' },
-    { id: 'extracellular_water_kg',  label: 'Extracellular Water',  unit: '', icon: 'water_drop',       fmt: null, desc: 'Water outside cells (blood, lymph, interstitial fluid). Elevated levels may indicate inflammation or fluid retention.' },
-    { id: 'intracellular_water_kg',  label: 'Intracellular Water',  unit: '', icon: 'water_drop',       fmt: null, desc: 'Water inside cells. Reflects hydration at the cellular level — higher relative to extracellular is generally healthier.' },
-  ];
 
-  const BODY_SCORE_METRICS = [
-    { id: 'vascular_age',       label: 'Vascular Age',     unit: 'yrs',  icon: 'cardiology',   fmt: v => Math.round(v), desc: 'Estimated age of your arteries based on pulse wave velocity. Lower than your actual age indicates healthier blood vessels.' },
-    { id: 'metabolic_age',      label: 'Metabolic Age',    unit: 'yrs',  icon: 'trending_up',  fmt: v => Math.round(v), desc: 'Your body\'s metabolic efficiency compared to age norms. Lower than your actual age means your metabolism is performing well.' },
-    { id: 'basal_metabolic_rate', label: 'Basal Metabolic Rate', unit: 'kcal/day', icon: 'local_fire_department', fmt: v => Math.round(v).toLocaleString(), desc: 'Calories your body burns at complete rest over 24 hours. Influenced by muscle mass, age, and body composition.' },
-    { id: 'nerve_health_score', label: 'Nerve Health Score',  unit: '/100', icon: 'neurology',    fmt: v => Math.round(v), desc: 'Monthly nerve health score from your Withings scale. Calculated from daily EDA readings over the month. Above 50 = Normal, below 50 = Low. Final score confirmed at month-end.' },
-    { id: 'eda_feet',           label: 'EDA (Daily)',        unit: 'µS',   icon: 'neurology',    fmt: v => v.toFixed(1), desc: 'Daily electrodermal activity reading from your Withings scale. Measures sweat gland nerve conductance in your feet. These daily readings feed into the monthly Nerve Health Score.' },
-    { id: 'pulse_wave_velocity',label: 'Pulse Wave Vel.',  unit: 'm/s',  icon: 'show_chart',    fmt: v => v.toFixed(1), desc: 'Speed of blood pressure pulse along arteries. Lower values indicate more elastic, healthier blood vessels.' },
-    { id: 'ecg_heart_rate',     label: 'Heart Rate',       unit: 'bpm',  icon: 'ecg_heart',     fmt: v => Math.round(v), desc: 'Heart rate measured during ECG recording on your scale. More accurate than optical wrist sensors.' },
-    { id: 'ecg_afib',           label: 'AFib Detection',   unit: '',     icon: 'ecg',           fmt: v => v === 1 ? 'Detected' : 'Normal', desc: 'Atrial fibrillation screening from ECG recording. "Normal" means no irregular rhythm detected during this reading.' },
-  ];
+
 
   function fmtWeight(kg) {
     if (kg == null) return null;
@@ -410,11 +330,7 @@
 
   // ── Garmin ─────────────────────────────────────────────────────────────────
   // Garmin-specific metrics (supplements the shared ALL_METRICS)
-  const GARMIN_METRICS = [
-    { id: 'body_battery_high', label: 'Body Battery (Peak)', unit: '',    icon: 'battery_full',    fmt: v => Math.round(v), desc: 'Highest Body Battery level today (0–100). Charges during rest and sleep, drains during activity and stress.' },
-    { id: 'body_battery_low',  label: 'Body Battery (Low)',  unit: '',    icon: 'battery_alert',   fmt: v => Math.round(v), desc: 'Lowest Body Battery level today. If it drops below 20, your body may need rest or recovery.' },
-    { id: 'stress_avg',        label: 'Avg Stress',          unit: '/100',icon: 'sentiment_stressed', fmt: v => Math.round(v), desc: 'Average stress level from Garmin (0–100). Measured via heart rate variability throughout the day. Lower is calmer.' },
-  ];
+
 
   async function initGarmin() {
     try {
@@ -689,8 +605,8 @@
     } else {
       // /api/wellness/fitbit/data also returns Health Connect rows (see rc.24),
       // so fire the fetch whenever Fitbit OR Health Connect is enabled.
-      try { if ($fitbitFamilyEnabled) fitbitRows = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
-      try { if ($garminEnabled)  garminRows  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
+      try { fitbitRows = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+      try { garminRows  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
     }
 
     // Build merged per-date sleep records, most recent last
@@ -848,8 +764,8 @@
 
     let fitbitRows = {}, garminRows = {};
     // /api/wellness/fitbit/data also returns Health Connect rows (see rc.24).
-    try { if ($fitbitFamilyEnabled) fitbitRows = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
-    try { if ($garminEnabled) garminRows = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
+    try { fitbitRows = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+    try { garminRows = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
 
     // History = all days EXCEPT today (today's values come from displayData)
     const history = dates.slice(0, -1).map(d => {
@@ -966,8 +882,8 @@
       try { fitbitRange = await _getWellnessRange(null, fromStr, toStr); } catch {}
     } else {
       // /api/wellness/fitbit/data also returns Health Connect rows (see rc.24).
-      try { if ($fitbitFamilyEnabled) fitbitRange = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
-      try { if ($garminEnabled)  garminRange  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
+      try { fitbitRange = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+      try { garminRange  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
     }
 
     const result = {};
@@ -1007,19 +923,26 @@
   // managed from the Android app (Settings → Wellness card is gated by
   // isNative); the web just reflects whatever the user enabled there.
   $: healthConnectAvailable = $healthConnectEnabled;
-  $: anyAvailable      = fitbitAvailable || withingsAvailable || garminAvailable || healthConnectAvailable;
+  // Also true when there's already federation data for today (steps,
+  // distance, weight, etc. pushed via write:wellness-metrics /
+  // write:body-measurements) — a federation-only setup can have zero
+  // Per explicit product decision: the Wellness page always shows all
+  // four tabs with their full card grids, regardless of whether any
+  // OAuth provider is enabled/connected or whether data exists yet for
+  // the selected day. "Activity Tracking" (the master toggle governing
+  // whether the Wellness nav tab appears at all) is the only gate; once
+  // inside, integration status plays no further role in what renders.
+  // Cards with no value for the day simply show "—" (already handled by
+  // each metric card's existing loadingData/fmt-null branches).
+  $: anyAvailable = true;
   // Count the number of enabled providers so the left-rail can
   // hide its 'Providers' heading when there's only one — no need
   // for a section caption above a single lonely row.
   $: _providerCount = [fitbitAvailable, withingsAvailable, garminAvailable, healthConnectAvailable]
     .filter(Boolean).length;
 
-  // Sliding pill: ordered list of visible tabs + active index
-  // Garmin contributes to activity/sleep/heart tabs alongside Fitbit
-  $: _wlTabList = [
-    ...(fitbitAvailable || garminAvailable || healthConnectAvailable ? ['activity', 'sleep', 'heart'] : []),
-    ...(withingsAvailable ? ['body'] : []),
-  ];
+  // Sliding pill: all four tabs always shown (see note above)
+  $: _wlTabList = ['activity', 'sleep', 'heart', 'body'];
   $: _wlActiveIdx  = Math.max(0, _wlTabList.indexOf(activeTab));
   // Pill position: measure actual tab button positions for pixel-perfect alignment
   let _tabBarEl = null;
@@ -1037,13 +960,6 @@
   $: if (_wlActiveIdx >= 0 && _tabBarEl) { tick().then(_updatePill); }
   onMount(() => { tick().then(_updatePill); window.addEventListener('resize', _updatePill); });
   onDestroy(() => { window.removeEventListener('resize', _updatePill); });
-
-  // Auto-correct activeTab when an integration's availability changes
-  $: if (status !== null && withingsStatus !== null && garminStatus !== null) {
-    const isActivityTab = activeTab === 'activity' || activeTab === 'sleep' || activeTab === 'heart';
-    if (isActivityTab && !fitbitAvailable && !garminAvailable && !healthConnectAvailable) activeTab = withingsAvailable ? 'body' : 'activity';
-    if (activeTab === 'body' && !withingsAvailable && !healthConnectAvailable) activeTab = (fitbitAvailable || garminAvailable || healthConnectAvailable) ? 'activity' : 'body';
-  }
 
   // ── Date navigation ────────────────────────────────────────────────────────
   function prevDay() {
@@ -1143,23 +1059,26 @@
     // Google-Health-only or HC-only user landed on a blank Wellness tab
     // and had to flip to Yesterday and back to trigger loadData via the
     // prevDay/nextDay path.
-    if (status.connected || garminStatus?.connected || $fitbitFamilyEnabled) {
-      await loadData(); // loadData already calls loadWorkouts()
-      if (isToday) {
-        const key = `wl_wellness_lastSync_${dateStr}`;
-        const last = localStorage.getItem(key);
-        const cooldownMs = 15 * 60 * 1000;
-        if (!last || Date.now() - Number(last) > cooldownMs) {
-          const fitbitMode  = $fitbitSyncMode ;
-          const garminMode_ = $garminSyncMode ;
-          const hcMode_     = $healthConnectSyncMode;
-          if (status.connected && fitbitMode === 'auto')        { await sync(true); syncWorkouts(); }
-          if (garminStatus?.connected && garminMode_ === 'auto') await syncGarmin(true);
-          if ($healthConnectEnabled && hcMode_ === 'auto')       syncHealthConnectManual();
-        }
+    // Always load — don't gate the fetch on OAuth connection status.
+    // `data` can be populated by a federation push (write:wellness-metrics)
+    // with no Fitbit/Garmin/Health-Connect connection at all; the render
+    // gates further down decide what to show based on what comes back,
+    // so the fetch itself should never be skipped. (Previously gated on
+    // `status.connected || garminStatus?.connected || $fitbitFamilyEnabled`,
+    // which left `data` permanently empty for federation-only setups.)
+    await loadData(); // loadData already calls loadWorkouts()
+    if (isToday) {
+      const key = `wl_wellness_lastSync_${dateStr}`;
+      const last = localStorage.getItem(key);
+      const cooldownMs = 15 * 60 * 1000;
+      if (!last || Date.now() - Number(last) > cooldownMs) {
+        const fitbitMode  = $fitbitSyncMode ;
+        const garminMode_ = $garminSyncMode ;
+        const hcMode_     = $healthConnectSyncMode;
+        if (status.connected && fitbitMode === 'auto')        { await sync(true); syncWorkouts(); }
+        if (garminStatus?.connected && garminMode_ === 'auto') await syncGarmin(true);
+        if ($healthConnectEnabled && hcMode_ === 'auto')       syncHealthConnectManual();
       }
-    } else {
-      loadingData = false;
     }
   }
 
@@ -1427,18 +1346,20 @@
   // ── Merged display data: only include data from enabled integrations ─────────
   $: displayData = (() => {
     const merged = {};
-    if ($garminEnabled || (isNative && Object.keys(garminData).length)) {
-      for (const [k, v] of Object.entries(garminData)) {
-        if (v != null) merged[k] = v;
-      }
+    // Merge unconditionally — `garminData`/`data` are already scoped to
+    // this user by the server, and can be non-empty from a federation
+    // push (write:wellness-metrics / write:body-measurements) even when
+    // no OAuth provider is enabled. Gating the merge on $garminEnabled /
+    // $fitbitFamilyEnabled (as before) meant federation-only data was
+    // fetched successfully but then silently discarded right here.
+    for (const [k, v] of Object.entries(garminData)) {
+      if (v != null) merged[k] = v;
     }
-    if ($fitbitFamilyEnabled || (isNative && Object.keys(data).length)) {
-      for (const [k, v] of Object.entries(data)) {
-        if (v != null) {
-          // Garmin sleep_score is device-measured; don't let Fitbit's estimate overwrite it
-          if (k === 'sleep_score' && merged[k] != null) continue;
-          merged[k] = v;
-        }
+    for (const [k, v] of Object.entries(data)) {
+      if (v != null) {
+        // Garmin sleep_score is device-measured; don't let Fitbit's estimate overwrite it
+        if (k === 'sleep_score' && merged[k] != null) continue;
+        merged[k] = v;
       }
     }
     // Calibration overrides — when actual Fitbit values are seeded, they take
@@ -1537,24 +1458,10 @@
         <span class="material-symbols-rounded spin">autorenew</span>
       </div>
 
-    <!-- ── Nothing configured ── -->
-    {:else if !anyAvailable}
-      <div class="connect-card">
-        <div class="connect-icon-wrap">
-          <span class="material-symbols-rounded connect-icon">monitor_heart</span>
-        </div>
-        <h2 class="connect-title">{$_('wellness_page.empty.no_integrations')}</h2>
-        <p class="connect-desc">{@html $_('wellness_page.empty.no_integrations_desc')}</p>
-        <div class="connect-chips">
-          <span class="connect-chip"><span class="material-symbols-rounded">directions_walk</span> {$_('wellness_page.chip.activity')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">bedtime</span> {$_('wellness_page.chip.sleep')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">favorite</span> {$_('wellness_page.chip.heart')}</span>
-          <span class="connect-chip"><span class="material-symbols-rounded">scale</span> {$_('wellness_page.chip.body')}</span>
-        </div>
-      </div>
-
     {:else}
-      <!-- ── At least one integration configured — main UI ── -->
+      <!-- ── Main UI — always shown once loaded; integration status no
+           longer gates anything here (see anyAvailable note above) ── -->
+
 
       <!-- ── Desktop three-pane wrapper (≥1280px). On mobile .wl-body is a plain block and the rails are display:none. ── -->
       <div class="wl-body">
@@ -1665,22 +1572,18 @@
       <div class="tab-bar-wrap">
       <div class="tab-bar" bind:this={_tabBarEl}>
         <div class="tab-pill" style="left:{_wlPillLeft};width:{_wlPillWidth}"></div>
-        {#if fitbitAvailable || garminAvailable || healthConnectAvailable}
-          <button class="tab-btn" class:active={activeTab === 'activity'} on:click={() => activeTab = 'activity'}>
-            <span class="material-symbols-rounded tab-icon">directions_walk</span> {$_('wellness_page.chip.activity')}
-          </button>
-          <button class="tab-btn" class:active={activeTab === 'sleep'} on:click={() => activeTab = 'sleep'}>
-            <span class="material-symbols-rounded tab-icon">bedtime</span> {$_('wellness_page.chip.sleep')}
-          </button>
-          <button class="tab-btn" class:active={activeTab === 'heart'} on:click={() => activeTab = 'heart'}>
-            <span class="material-symbols-rounded tab-icon">favorite</span> {$_('wellness_page.chip.heart')}
-          </button>
-        {/if}
-        {#if withingsAvailable || healthConnectAvailable}
-          <button class="tab-btn" class:active={activeTab === 'body'} on:click={() => activeTab = 'body'}>
-            <span class="material-symbols-rounded tab-icon">monitor_weight</span> {$_('wellness_page.chip.body')}
-          </button>
-        {/if}
+        <button class="tab-btn" class:active={activeTab === 'activity'} on:click={() => activeTab = 'activity'}>
+          <span class="material-symbols-rounded tab-icon">directions_walk</span> {$_('wellness_page.chip.activity')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'sleep'} on:click={() => activeTab = 'sleep'}>
+          <span class="material-symbols-rounded tab-icon">bedtime</span> {$_('wellness_page.chip.sleep')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'heart'} on:click={() => activeTab = 'heart'}>
+          <span class="material-symbols-rounded tab-icon">favorite</span> {$_('wellness_page.chip.heart')}
+        </button>
+        <button class="tab-btn" class:active={activeTab === 'body'} on:click={() => activeTab = 'body'}>
+          <span class="material-symbols-rounded tab-icon">monitor_weight</span> {$_('wellness_page.chip.body')}
+        </button>
       </div>
       </div>
       <div style="height:12px"></div>
@@ -1688,8 +1591,14 @@
       <!-- ── Fitbit tabs (Activity / Sleep / Heart) ── -->
       {#if activeTab === 'activity' || activeTab === 'sleep' || activeTab === 'heart'}
 
-        {#if !status.connected && !garminStatus?.connected && !withingsStatus?.connected && !$fitbitFamilyEnabled && !(isNative && _hasLocalData)}
-          <!-- Fitbit configured but not yet connected -->
+        {#if false}
+          <!-- Per explicit product decision, this "not connected" branch
+               is permanently disabled — Activity/Sleep/Heart always show
+               the metric grid below (with "—" for any unset value)
+               regardless of OAuth/provider status. Left in place rather
+               than deleted so the connect/OAuth flow itself (the
+               `connect()` function, `wellness_page.connect.*` strings)
+               isn't orphaned if this is ever revisited. -->
           {#if !status.configured}
             <div class="connect-card">
               <div class="connect-icon-wrap">
@@ -2029,8 +1938,11 @@
                 </div>
               {/each}
             </div>
-            <!-- Garmin-specific: Body Battery + Stress -->
-            {#if $garminEnabled && garminStatus?.connected && GARMIN_METRICS.filter(m => isVisible(m.id)).some(m => garminData[m.id] != null)}
+            <!-- Garmin daily-summary extras: Body Battery + Stress. Reads
+                 from garminData, which now includes federation-sourced
+                 rows too (see garmin.js's GET /data) — no longer requires
+                 a real Garmin connection, matching every other section. -->
+            {#if GARMIN_METRICS.filter(m => isVisible(m.id)).some(m => garminData[m.id] != null)}
               <div class="card" style="margin-top:12px;padding:16px">
                 <div class="sleep-stages-header" style="margin-bottom:12px">
                   <span class="wl-brand-icon" style="font-size:16px;color:var(--accent)"><GarminIcon /></span>
@@ -2177,7 +2089,8 @@
 
       <!-- ── Body tab (Withings) ── -->
       {:else if activeTab === 'body'}
-        {#if withingsStatus.connected || $fitbitFamilyEnabled || (isNative && _hasLocalData)}
+        {#if true}
+          <!-- Always renders — see anyAvailable note above. -->
           <div class="metric-grid">
             {#each BODY_METRICS.filter(m => isVisible(m.id)) as m}
               {@const raw = withingsData[m.id] ?? data[m.id] ?? null}
@@ -2580,7 +2493,7 @@
             {/if}
           {:else if activeTab === 'body'}
             <!-- Body Scan Scores (rail duplicate) -->
-            {#if (withingsStatus.connected || $fitbitFamilyEnabled || (isNative && _hasLocalData)) && BODY_SCORE_METRICS.filter(m => isVisible(m.id)).some(m => (withingsData[m.id] ?? data[m.id]) != null)}
+            {#if BODY_SCORE_METRICS.filter(m => isVisible(m.id)).some(m => (withingsData[m.id] ?? data[m.id]) != null)}
               <div class="wl-rail-only">
                 <div class="card" style="padding:16px">
                   <div class="sleep-stages-header" style="margin-bottom:12px">

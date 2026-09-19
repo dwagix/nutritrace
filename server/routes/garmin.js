@@ -434,16 +434,22 @@ router.post('/sync', wrap(async (req, res) => {
 }));
 
 // ── GET /data ─────────────────────────────────────────────────────────────────
+// Includes source='federation' alongside 'garmin' — matches fitbit.js's
+// GET /data, which already returns federation rows so a headless push
+// (write:wellness-metrics, no real Garmin OAuth connection) renders here
+// too. Without this, Body Battery/Stress (this endpoint's only unique
+// metrics) could never show federation data no matter what the client
+// gate did, since the row physically wouldn't be in the result set.
 router.get('/data', wrap((req, res) => {
   const u = uid(req);
   const { date, from, to } = req.query;
   let rows;
   if (date) {
-    rows = db.prepare('SELECT * FROM wellness_data WHERE user_id=? AND date=? AND source=?').all(u, date, 'garmin');
+    rows = db.prepare("SELECT * FROM wellness_data WHERE user_id=? AND date=? AND source IN ('garmin', 'federation')").all(u, date);
   } else {
     const start = from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const end   = to   || new Date().toISOString().slice(0, 10);
-    rows = db.prepare('SELECT * FROM wellness_data WHERE user_id=? AND date>=? AND date<=? AND source=? ORDER BY date').all(u, start, end, 'garmin');
+    rows = db.prepare("SELECT * FROM wellness_data WHERE user_id=? AND date>=? AND date<=? AND source IN ('garmin', 'federation') ORDER BY date").all(u, start, end);
   }
   const byDate = {};
   for (const row of rows) {

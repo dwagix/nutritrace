@@ -6,9 +6,10 @@
   import { scheduleSave } from '../../stores/settings.js';
   import {
     statsMetricOrder, statsHiddenMetrics, wellnessMetrics,
-    waterShowInStats, fitbitFamilyEnabled, garminEnabled, withingsEnabled,
+    waterShowInStats,
     hiddenBodyStats,
   } from '../../stores/settings.js';
+  import { ALL_METRICS as WL_ALL_METRICS, BODY_METRICS as WL_BODY_METRICS, BODY_SCORE_METRICS as WL_BODY_SCORE_METRICS, GARMIN_METRICS as WL_GARMIN_METRICS, wlKey as _wlKey } from '../../lib/wellness-metrics.js';
 
   function set(key, value) { DB.setSetting(key, value); scheduleSave(key, value); }
 
@@ -27,9 +28,10 @@
   $: set('statsTrendLine', statsTrendLine);
 
   // Mirror the metric-list derivation from Statistics.svelte so this panel
-  // reflects exactly what the Statistics page can render. Duplicated on
-  // purpose — the wellness gating depends on connected sources, and pulling
-  // the list from Statistics.svelte would require it to be mounted.
+  // reflects exactly what the Statistics page can render. Both pull from
+  // the same shared src/lib/wellness-metrics.js definitions now, so a
+  // metric added there automatically appears in both places — no more
+  // hand-copying a subset into each file separately.
   function _wlVisibleForStats(apiField) {
     return $wellnessMetrics == null || $wellnessMetrics.includes(apiField);
   }
@@ -46,18 +48,19 @@
     const water = ($waterShowInStats ?? DB.getSetting('waterShowInStats', true))
       ? [{ key: 'water', label: 'Water', group: 'water' }]
       : [];
-    const hasWellness = $fitbitFamilyEnabled || $garminEnabled;
+    // Wellness metrics — always available now (see Statistics.svelte's
+    // WELLNESS_METRICS for the full rationale); _wlVisibleForStats is the
+    // only remaining filter, and it's the user's own hide/show choice.
     const wellness = [
-      ...(hasWellness ? [
-        ...(_wlVisibleForStats('steps')             ? [{ key:'wl_steps',  label:'Steps' }] : []),
-        ...(_wlVisibleForStats('active_minutes')    ? [{ key:'wl_active', label:'Active Minutes' }] : []),
-        ...(_wlVisibleForStats('sleep_duration_min')? [{ key:'wl_sleep',  label:'Sleep' }] : []),
-        ...(_wlVisibleForStats('resting_hr')        ? [{ key:'wl_rhr',    label:'Resting HR' }] : []),
-        ...(_wlVisibleForStats('hrv_daily_rmssd')   ? [{ key:'wl_hrv',    label:'HRV' }] : []),
-        ...(_wlVisibleForStats('spo2_avg')          ? [{ key:'wl_spo2',   label:'SpO2' }] : []),
-      ] : []),
-      ...(($withingsEnabled || $fitbitFamilyEnabled) && _wlVisibleForStats('muscle_mass_kg')
-        ? [{ key:'wl_muscle', label:'Muscle Mass' }] : []),
+      ...WL_ALL_METRICS
+        .filter(m => ['activity', 'sleep', 'sleep_quality', 'heart'].includes(m.group) && _wlVisibleForStats(m.id))
+        .map(m => ({ key: _wlKey(m.id), label: m.label })),
+      ...WL_GARMIN_METRICS
+        .filter(m => _wlVisibleForStats(m.id))
+        .map(m => ({ key: _wlKey(m.id), label: m.label })),
+      ...[...WL_BODY_METRICS, ...WL_BODY_SCORE_METRICS]
+        .filter(m => !['weight_kg', 'body_fat_pct', 'body_water_pct'].includes(m.id) && _wlVisibleForStats(m.id))
+        .map(m => ({ key: _wlKey(m.id), label: m.label })),
     ].map(w => ({ ...w, group: 'wellness' }));
     return [...nut, ...bodyAll, ...water, ...wellness];
   })();

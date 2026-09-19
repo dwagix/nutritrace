@@ -13,11 +13,12 @@
   import { NUTRIMENTS, Nutrition } from '../lib/nutrition.js';
   import { readBodyStat } from '../lib/body-stats-unit.js';
   import { resolveRangeGoal } from '../lib/goal-resolver.js';
+  import { ALL_METRICS as WL_ALL_METRICS, BODY_METRICS as WL_BODY_METRICS, BODY_SCORE_METRICS as WL_BODY_SCORE_METRICS, GARMIN_METRICS as WL_GARMIN_METRICS, wlKey as _wlKey, wlIdFromKey as _wlIdFromKey } from '../lib/wellness-metrics.js';
   import { goals, energyUnit, weightUnit, lengthUnit, statsChartType, statsYZero,
            statsAvgLine, statsGoalLine, statsTrendLine, statsIncludeToday, statsShowEmptyDays,
            statsMetricOrder, statsHiddenMetrics,
            hiddenBodyStats, dateFormat, pageBanners, bannerStyle,
-           fitbitEnabled, garminEnabled, withingsEnabled, googleHealthEnabled, healthConnectEnabled, fitbitFamilyEnabled, wellnessMetrics,
+           healthConnectEnabled, wellnessMetrics,
            calorieGoalMode,
            fastingEnabled,
            diaryShowCompletion } from '../stores/settings.js';
@@ -53,11 +54,10 @@
   // — we skip it rather than paint an empty chart.
   function _isCurrentlyAvailable(key) {
     if (!key) return false;
-    if (key.startsWith('wl_')) {
-      const hasWellness = $fitbitFamilyEnabled || $garminEnabled;
-      if (key === 'wl_muscle') return hasWellness || $withingsEnabled;
-      return hasWellness;
-    }
+    // Wellness metrics are always available now — integration status no
+    // longer gates chartability (a federation-only push can have real data
+    // with every OAuth provider toggled off). See WELLNESS_METRICS above.
+    if (key.startsWith('wl_')) return true;
     if (key === 'water') return _waterShowInStats;
     // Body-stat keys can be individually hidden via Settings → Body.
     const isBody = ['weight','neck','waist','hips','chest','thighs','biceps','calves','body_fat','body_water'].includes(key);
@@ -96,35 +96,51 @@
   // Cumulative metrics accumulate throughout the day (calories, steps, water, etc.).
   // Excluded from charts by default until the day is complete to avoid trend distortion.
   // Point-in-time metrics (sleep score, weight, HRV, RHR) are not affected.
+  const _WL_CUMULATIVE_IDS = new Set(WL_ALL_METRICS.filter(m => m.group === 'activity').map(m => m.id));
   function isCumulative(m) {
     if (!m) return false;
     if (NUTRIMENTS.some(n => n.id === m)) return true;
     if (m === 'water' || m === 'water_ml') return true;
-    if (m === 'wl_steps' || m === 'wl_active') return true;
+    if (m.startsWith('wl_')) return _WL_CUMULATIVE_IDS.has(_wlIdFromKey(m));
     return false;
   }
 
-  // Wellness metrics — shown only when relevant integration is enabled.
-  // The "fitbit family" (fitbit / google-health / health-connect) all flow
-  // through the same /api/wellness/fitbit/data endpoint server-side; the
-  // shared derived store lives in stores/settings.js so every consumer
-  // stays in sync as new sources are added.
-  $: _hasWellness = $fitbitFamilyEnabled || $garminEnabled;
+  // Wellness metrics — always available as trend options once there's data,
+  // independent of whether any OAuth provider is enabled/connected (a
+  // federation-only setup, e.g. Home Assistant pushing via
+  // write:wellness-metrics / write:body-measurements, has none of these
+  // toggled on and still has real data to trend). Matches the "no
+  // integration gating" decision applied to the Wellness page itself —
+  // `_wlVisible` below is the ONLY remaining gate, and it's a user
+  // preference (Settings → Statistics → hide this metric), not an
+  // integration-status check.
   function _wlVisible(apiField) {
     return $wellnessMetrics == null || $wellnessMetrics.includes(apiField);
   }
   $: WELLNESS_METRICS = [
-    ...(_hasWellness ? [
-      ...(_wlVisible('steps')             ? [{ value: 'wl_steps',  label: 'Steps',        unit: 'steps', apiSource: 'fitgarm', apiField: 'steps' }] : []),
-      ...(_wlVisible('active_minutes')    ? [{ value: 'wl_active', label: 'Active Min.',   unit: 'min',   apiSource: 'fitgarm', apiField: 'active_minutes' }] : []),
-      ...(_wlVisible('sleep_duration_min')? [{ value: 'wl_sleep',  label: 'Sleep',         unit: 'hr',    apiSource: 'fitgarm', apiField: 'sleep_duration_min', fmtVal: v => Math.round(v / 6) / 10 }] : []),
-      ...(_wlVisible('resting_hr')        ? [{ value: 'wl_rhr',    label: 'Resting HR',    unit: 'bpm',   apiSource: 'fitgarm', apiField: 'resting_hr' }] : []),
-      ...(_wlVisible('hrv_daily_rmssd')   ? [{ value: 'wl_hrv',    label: 'HRV',           unit: 'ms',    apiSource: 'fitgarm', apiField: 'hrv_daily_rmssd' }] : []),
-      ...(_wlVisible('spo2_avg')          ? [{ value: 'wl_spo2',   label: 'SpO2',          unit: '%',     apiSource: 'fitgarm', apiField: 'spo2_avg' }] : []),
-    ] : []),
-    ...(($withingsEnabled || $fitbitFamilyEnabled) && _wlVisible('muscle_mass_kg') ? [
-      { value: 'wl_muscle', label: 'Muscle Mass',   unit: '',      apiSource: 'withings', apiField: 'muscle_mass_kg', isWeight: true },
-    ] : []),
+    ...WL_ALL_METRICS
+      .filter(m => ['activity', 'sleep', 'sleep_quality', 'heart'].includes(m.group) && _wlVisible(m.id))
+      .map(m => ({
+        value: _wlKey(m.id), label: m.label, unit: m.unit, apiSource: 'fitgarm', apiField: m.id,
+        // Sleep Duration is the one metric shown in fractional hours rather
+        // than its native unit — at 400-500+ minutes, hours read far more
+        // naturally on a trend chart than raw minutes.
+        ...(m.id === 'sleep_duration_min' ? { unit: 'hr', fmtVal: v => Math.round(v / 6) / 10 } : {}),
+      })),
+    ...WL_GARMIN_METRICS
+      .filter(m => _wlVisible(m.id))
+      .map(m => ({ value: _wlKey(m.id), label: m.label, unit: m.unit, apiSource: 'fitgarm', apiField: m.id })),
+    // Body composition — weight/body_fat/body_water are excluded here since
+    // they're already tracked as plain body-stats below (diary.body_stats),
+    // not via the wellness API; everything else (muscle mass, bone mass,
+    // lean/fat mass, hydration breakdown, Withings' body-score extras) only
+    // ever lands in wellness_data, so it's wellness-sourced exclusively.
+    ...[...WL_BODY_METRICS, ...WL_BODY_SCORE_METRICS]
+      .filter(m => !['weight_kg', 'body_fat_pct', 'body_water_pct'].includes(m.id) && _wlVisible(m.id))
+      .map(m => ({
+        value: _wlKey(m.id), label: m.label, unit: m.unit, apiSource: 'withings', apiField: m.id,
+        isWeight: ['muscle_mass_kg', 'bone_mass_kg', 'lean_mass_kg', 'fat_mass_kg', 'extracellular_water_kg', 'intracellular_water_kg'].includes(m.id),
+      })),
   ];
 
   // All available metrics = NUTRIMENTS + body stats + wellness
@@ -210,11 +226,13 @@
     const isWellness   = metric.startsWith('wl_');
     // Withings + Health Connect both report weight + body fat; Withings is
     // the only device that reports body water % (Health Connect's
-    // "Hydration" data type is drink intake, not body composition), so
-    // body_water is device-sourced only when Withings is connected.
-    const isBodyDevice =
-      ((metric === 'weight' || metric === 'body_fat') && ($withingsEnabled || $fitbitFamilyEnabled)) ||
-      (metric === 'body_water' && $withingsEnabled);
+    // "Hydration" data type is drink intake, not body composition).
+    // Previously gated on $withingsEnabled/$fitbitFamilyEnabled — but a
+    // federation-only push (write:body-measurements, no OAuth provider
+    // enabled) can still have real weight/body_fat/body_water sitting in
+    // wellness_data, so always attempt the fetch and let its result (empty
+    // or not) decide, rather than skipping it based on integration status.
+    const isBodyDevice = metric === 'weight' || metric === 'body_fat' || metric === 'body_water';
 
     if (range === 'all' && (isWellness || isBodyDevice)) {
       // Wellness data doesn't come from diary — use last 365 days
@@ -261,8 +279,8 @@
         // 'health_connect') server-side, and Google Health Web API rows are
         // tagged source='fitbit', so one call covers fitbit + google-health
         // + health-connect for all server-mode users (browser + Android).
-        try { if ($fitbitFamilyEnabled)  fitbitData  = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
-        try { if ($garminEnabled)        garminData  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { fitbitData  = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { garminData  = await NtApi.get(`/api/wellness/garmin/data?from=${fromStr}&to=${toStr}`); } catch {}
         // Android local-only mode (no server): fall back to the local
         // SQLite where on-device Health Connect data is stored directly.
         if ($healthConnectEnabled && isNative) {
@@ -273,17 +291,17 @@
         }
         rows = dates.map(d => {
           let raw = garminData[d]?.[wlMeta.apiField] ?? fitbitData[d]?.[wlMeta.apiField] ?? hcData[d]?.[wlMeta.apiField] ?? null;
-          if (raw != null && metric === 'calories_out' && $energyUnit === 'kJ') raw = Nutrition.kcalToKj(raw);
+          if (raw != null && metric === 'wl_calories_out' && $energyUnit === 'kJ') raw = Nutrition.kcalToKj(raw);
           const val = raw != null && wlMeta.fmtVal ? wlMeta.fmtVal(raw) : raw;
           return { date: d, val };
         });
       } else if (wlMeta.apiSource === 'withings') {
         let withingsData = {}, fitbitData = {}, hcData = {};
-        try { if ($withingsEnabled) withingsData = await NtApi.get(`/api/wellness/withings/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { withingsData = await NtApi.get(`/api/wellness/withings/data?from=${fromStr}&to=${toStr}`); } catch {}
         // The fitbit /data endpoint surfaces HC body-comp metrics too
         // (weight, body_fat, muscle_mass) since it returns source IN
         // ('fitbit', 'health_connect') for every metric_type.
-        try { if ($fitbitFamilyEnabled) fitbitData = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { fitbitData = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
         if ($healthConnectEnabled && isNative) {
           try {
             const { dbGetWellnessGrouped } = await import('../lib/db-native.js');
@@ -306,8 +324,8 @@
       // and Google Health server-side; local SQLite covers Android offline.
       let withingsData = {}, fitbitBodyData = {}, hcBodyData = {};
       if (isBodyDevice) {
-        try { if ($withingsEnabled) withingsData = await NtApi.get(`/api/wellness/withings/data?from=${fromStr}&to=${toStr}`); } catch {}
-        try { if ($fitbitFamilyEnabled) fitbitBodyData = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { withingsData = await NtApi.get(`/api/wellness/withings/data?from=${fromStr}&to=${toStr}`); } catch {}
+        try { fitbitBodyData = await NtApi.get(`/api/wellness/fitbit/data?from=${fromStr}&to=${toStr}`); } catch {}
         if ($healthConnectEnabled && isNative) {
           try {
             const { dbGetWellnessGrouped } = await import('../lib/db-native.js');

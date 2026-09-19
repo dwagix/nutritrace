@@ -17,7 +17,7 @@
   $: WELLNESS_TAB = { path: '/wellness', customIcon: WellnessIcon, label: $_('nav.wellness') };
 
   // Wellness tab inserted after Foods (where Water used to be) when the feature is enabled
-  $: showWellness = $wellnessEnabled && ($fitbitEnabled || $withingsEnabled || $garminEnabled || $googleHealthEnabled || $healthConnectEnabled);
+  $: showWellness = $wellnessEnabled; // no longer requires a provider enabled too — federation-only setups have no provider toggled on
   $: tabs = showWellness
     ? [...BASE_TABS.slice(0, 2), WELLNESS_TAB, ...BASE_TABS.slice(2)]
     : BASE_TABS;
