@@ -76,6 +76,7 @@ const METRIC_KEYS = new Set([
   'sleep_full_awakenings',
   // heart
   'resting_hr',
+  'avg_heart_rate',
   'spo2_avg',
   'respiratory_rate',
   'hrv_daily_rmssd',
