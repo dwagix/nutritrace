@@ -43,11 +43,9 @@
 
   $: WELLNESS_NAV = { path: '/wellness', customIcon: WellnessIcon, label: $_('nav.wellness') };
 
-  // Must mirror BottomNav.svelte's predicate so the sidebar shows Wellness
-  // for the same source set: Fitbit / Withings / Garmin / Google Health /
-  // Health Connect. Earlier omission of healthConnect caused #62 (sidebar
-  // hid Wellness for HC-only users while bottom nav showed it).
-  $: showWellness = $wellnessEnabled && ($fitbitEnabled || $withingsEnabled || $garminEnabled || $googleHealthEnabled || $healthConnectEnabled);
+  // Mirrors BottomNav.svelte: Wellness shows whenever it is enabled, with or
+  // without a connected provider (federation-only setups have none).
+  $: showWellness = $wellnessEnabled; // no longer requires a provider enabled too — mirrors BottomNav (federation-only setups)
   $: navItems = showWellness
     ? [...BASE_NAV.slice(0, 2), WELLNESS_NAV, ...BASE_NAV.slice(2)]
     : BASE_NAV;
