@@ -18,6 +18,11 @@
  * "fill-if-empty" sync, and matches the user intent behind
  * deliberately setting up the federation integration).
  *
+ * Fork: weight and body_fat are additionally written under the keys the
+ * Diary reads (`body_stats.weight` / `body_stats.body_fat` + unit tag) via
+ * logBodyStatCore; the response carries a `diary` object saying whether
+ * that part succeeded.
+ *
  * Wire contract:
  *   {
  *     measured_at:   "2026-07-25T16:10:51Z",   // required, ISO 8601
@@ -50,6 +55,7 @@ import { Router } from 'express';
 import db from '../../../db.js';
 import { wrap } from '../../../logger.js';
 import { requireScope } from '../../../middleware/bearer-auth.js';
+import { logBodyStatCore } from '../../../lib/mcp/tools/log-body-stat.js';
 
 const router = Router();
 
@@ -223,10 +229,33 @@ router.post('/', requireScope('write:body-measurements'), wrap((req, res) => {
     insertWellness.run(wellnessUid, date, key, value, wellnessMeta);
   }
 
+  // Fork: the Diary's Body Stats widget (and Goals) read `body_stats.weight`
+  // / `body_stats.body_fat` plus a `weight_unit` tag, NOT the `weight_kg` /
+  // `body_fat_pct` keys written above, so a pushed weight never reached the
+  // Diary. Write the Diary keys through the same core the MCP log_body_stat
+  // tool and PUT /api/v1/diary/:date/body-stat use: it handles the unit tag
+  // (lb users get a converted value), legacy untagged days, and tombstones.
+  // Overwrites, matching this endpoint's "newest reading wins" semantics.
+  const diaryStats = {};
+  if (updates.weight_kg    != null) diaryStats.weight   = updates.weight_kg;
+  if (updates.body_fat_pct != null) diaryStats.body_fat = updates.body_fat_pct;
+  let diary = null;
+  if (Object.keys(diaryStats).length) {
+    try {
+      logBodyStatCore(userId, { stats: diaryStats, date });
+      diary = { ok: true, stored: Object.keys(diaryStats) };
+    } catch (e) {
+      // Wellness data is already saved; report why the Diary was skipped
+      // instead of failing the whole push.
+      diary = { ok: false, error: e.message };
+    }
+  }
+
   res.status(201).json({
     ok: true,
     date,
     stored: Object.keys(updates).filter(k => !k.startsWith('_')),
+    ...(diary && { diary }),
   });
 }));
 
