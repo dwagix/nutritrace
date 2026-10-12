@@ -19,10 +19,10 @@
   import { fold } from '../lib/fold.js';
 
 
-  // Mirror settings/Goals.svelte: any wearable that reports calorie burn
-  // unlocks Dynamic mode. Uses the shared derived fitbitFamilyEnabled so
-  // adding a new source doesn't silently disable the button.
-  $: _hasWearable = $fitbitFamilyEnabled || $garminEnabled;
+  // Fork: Dynamic mode is no longer gated on a connected wearable. Daily
+  // calories_out can arrive via POST /api/v1/wellness-metrics (Home
+  // Assistant), and the goal falls back to the fixed target when there is
+  // no data for yesterday, so there is nothing to protect users from.
 
   const BODY_STATS = [
     { id: 'weight',     label: 'Weight',     isBody: true },
@@ -732,9 +732,7 @@
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'fixed'}
           on:click={() => calorieGoalMode.set('fixed')}>{$_('settings_goals.mode_fixed')}</button>
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'dynamic'}
-          disabled={!_hasWearable}
-          title={!_hasWearable ? 'Connect a wearable in Wellness first' : ''}
-          on:click={() => _hasWearable && calorieGoalMode.set('dynamic')}>{$_('settings_goals.mode_dynamic')}</button>
+          on:click={() => calorieGoalMode.set('dynamic')}>{$_('settings_goals.mode_dynamic')}</button>
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'adaptive'}
           on:click={() => calorieGoalMode.set('adaptive')}>{$_('settings_goals.mode_adaptive')}</button>
       </div>

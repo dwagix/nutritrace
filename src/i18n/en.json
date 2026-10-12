@@ -648,6 +648,10 @@
     }
   },
   "diary": {
+    "meal_collapse": "Collapse",
+    "meal_expand": "Expand",
+    "meal_collapse_aria": "Collapse {meal}",
+    "meal_expand_aria": "Expand {meal}",
     "add_food": "Add Food",
     "notes_placeholder": "How did today feel? Sleep, energy, hunger, cravings…",
     "quick_calories": {
@@ -2236,6 +2240,10 @@
     }
   },
   "wellness_page": {
+    "federation": {
+      "fresh": "External data last received {time} ago",
+      "stale": "No data received from your integration in {time}. Check the automation."
+    },
     "nav": {
       "prev_day": "Previous day",
       "next_day": "Next day",

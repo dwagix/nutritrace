@@ -305,7 +305,7 @@ router.get('/api/wellness/latest', (req, res) => {
 });
 
 // Cross-source calories_out lookup — for Dynamic Calorie Goal
-// Returns yesterday's merged TDEE from fitbit/garmin/health_connect/lifttrace
+// Returns yesterday's merged TDEE from garmin/health_connect/fitbit/federation/lifttrace
 router.get('/api/wellness/calories-out', (req, res) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -321,9 +321,12 @@ router.get('/api/wellness/calories-out', (req, res) => {
   // users flip that: when OFF, LT wins over wearables (use this if your
   // wearable misses lifting sessions and you trust LT's estimate more).
   const overlapFill = _readBoolSetting(userId, 'lifttraceOverlapFill', true);
+  // Fork: 'federation' (POST /api/v1/wellness-metrics, e.g. Home Assistant)
+  // is a daily total like the wearables, so it ranks above LiftTrace's
+  // per-workout slice.
   const PRIORITY = overlapFill
-    ? ['garmin', 'health_connect', 'fitbit', 'lifttrace']
-    : ['lifttrace', 'garmin', 'health_connect', 'fitbit'];
+    ? ['garmin', 'health_connect', 'fitbit', 'federation', 'lifttrace']
+    : ['lifttrace', 'garmin', 'health_connect', 'fitbit', 'federation'];
   const rows = db.prepare(
     `SELECT source, value FROM wellness_data
      WHERE user_id=? AND date=? AND metric_type='calories_out'`
@@ -334,6 +337,30 @@ router.get('/api/wellness/calories-out', (req, res) => {
     if (row) { result = { calories_out: row.value, source: src, date: yesterday }; break; }
   }
   res.json(result || { calories_out: null, source: null, date: yesterday });
+});
+
+// Fork: when did an external pusher (Home Assistant etc., via
+// POST /api/v1/wellness-metrics or /body-measurements) last write? Lets the
+// Wellness page tell "no data today" apart from "the automation stopped".
+// synced_at is SQLite datetime('now'), i.e. UTC without a zone suffix, so it
+// is returned as ISO-8601 with a Z. user_id 0 is the single-user sentinel.
+router.get('/api/wellness/federation-status', (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const rows = db.prepare(
+    `SELECT metric_type, MAX(date) AS date, MAX(synced_at) AS synced_at
+       FROM wellness_data
+      WHERE source = 'federation' AND user_id IN (?, 0)
+      GROUP BY metric_type`
+  ).all(userId);
+  const iso = s => (s ? s.replace(' ', 'T') + 'Z' : null);
+  const metrics = {};
+  let last = null;
+  for (const r of rows) {
+    metrics[r.metric_type] = { date: r.date, synced_at: iso(r.synced_at) };
+    if (r.synced_at && (!last || r.synced_at > last)) last = r.synced_at;
+  }
+  res.json({ last_synced_at: iso(last), metrics });
 });
 
 function _readBoolSetting(userId, key, defaultValue) {

@@ -1,15 +1,8 @@
 <script>
   import { _ } from 'svelte-i18n';
-  import {
-    calorieGoalMode, calorieGoalFactor,
-    fitbitFamilyEnabled, garminEnabled,
-  } from '../../stores/settings.js';
+  import { calorieGoalMode, calorieGoalFactor } from '../../stores/settings.js';
 
-  // Mirror the parent-shell derivation: any wearable that reports calorie burn
-  // unlocks Dynamic mode. Uses the shared derived fitbitFamilyEnabled so adding
-  // a new source (e.g. future Polar/Suunto) doesn't silently leave the button
-  // disabled for users of that source.
-  $: _hasWearable = $fitbitFamilyEnabled || $garminEnabled;
+  // Fork: Dynamic mode is not gated on a connected wearable (see Goals.svelte).
 </script>
 
 <div class="section-body">
@@ -23,17 +16,10 @@
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'fixed'}
           on:click={() => calorieGoalMode.set('fixed')}>{$_('settings_goals.mode_fixed')}</button>
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'dynamic'}
-          disabled={!_hasWearable}
-          title={!_hasWearable ? 'Connect a wearable in Wellness first' : ''}
-          on:click={() => _hasWearable && calorieGoalMode.set('dynamic')}>{$_('settings_goals.mode_dynamic')}</button>
+          on:click={() => calorieGoalMode.set('dynamic')}>{$_('settings_goals.mode_dynamic')}</button>
         <button class="seg-opt" class:seg-active={$calorieGoalMode === 'adaptive'}
           on:click={() => calorieGoalMode.set('adaptive')}>{$_('settings_goals.mode_adaptive')}</button>
       </div>
-      {#if !_hasWearable}
-        <p class="setting-desc" style="padding:4px 0 0;font-size:12px;line-height:1.4">
-          {$_('settings_goals.dynamic_needs_wearable')} <a href="#/settings/wellness" class="about-link">{$_('settings_goals.dynamic_needs_wearable_setup')}</a>.
-        </p>
-      {/if}
     </div>
     {#if $calorieGoalMode === 'fixed'}
       <div class="setting-divider"></div>

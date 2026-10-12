@@ -1380,6 +1380,32 @@
     { label: 'Light', key: 'sleep_light_min', color: '#06b6d4' },
     { label: 'Awake', key: 'sleep_wake_min',  color: '#f59e0b' },
   ];
+
+  // Fork: freshness of data pushed by external integrations (Home Assistant
+  // etc. via POST /api/v1/wellness-metrics). Cards always show, so without
+  // this a stopped automation looks identical to "no data yet". Activity is
+  // pushed about every 30 min, so no push in 3 h means something broke.
+  const FED_STALE_MS = 3 * 60 * 60 * 1000;
+  let fedLastPush = null;   // Date | null
+  let fedAgeMs = 0;
+  $: fedStale = fedLastPush != null && fedAgeMs > FED_STALE_MS;
+  $: fedAgo = _fmtAgo(fedAgeMs);
+  function _fmtAgo(ms) {
+    const m = Math.max(0, Math.round(ms / 60000));
+    if (m < 1)  return '<1 min';
+    if (m < 60) return m + ' min';
+    const h = Math.floor(m / 60);
+    if (h < 48) return h + ' h';
+    return Math.floor(h / 24) + ' d';
+  }
+  async function loadFederationStatus() {
+    try {
+      const r = await NtApi.get('/api/wellness/federation-status');
+      fedLastPush = r?.last_synced_at ? new Date(r.last_synced_at) : null;
+      fedAgeMs = fedLastPush ? Date.now() - fedLastPush.getTime() : 0;
+    } catch { fedLastPush = null; }
+  }
+  onMount(() => { loadFederationStatus(); });
 </script>
 
 <div class="page-shell wl-shell">
@@ -1387,6 +1413,14 @@
   <header class="page-header" class:banner-gradient={$bannerStyle === 'gradient'} class:banner-animated={$bannerStyle === 'animated'}>
     <h1>{$_('routes.wellness.title')}</h1>
   </header>
+
+  {#if fedLastPush}
+    <div class="wl-fed-status" class:wl-fed-stale={fedStale} role={fedStale ? 'status' : undefined}
+      title={new Date(fedLastPush).toLocaleString()}>
+      <span class="material-symbols-rounded">{fedStale ? 'sync_problem' : 'cloud_done'}</span>
+      <span>{$_(fedStale ? 'wellness_page.federation.stale' : 'wellness_page.federation.fresh', { values: { time: fedAgo } })}</span>
+    </div>
+  {/if}
 
   <!-- Fixed sync buttons — portalled to body so position:fixed is viewport-relative -->
   <div class="wl-topbar-actions" use:portal>
@@ -2714,6 +2748,13 @@
   .date-sub   { font-size: 12px; color: var(--text-3); }
 
   /* Loading spinner */
+  .wl-fed-status {
+    display: flex; align-items: center; gap: 6px;
+    margin: 0 var(--page-px, 16px) 8px;
+    font-size: 12px; color: var(--text-3);
+  }
+  .wl-fed-status .material-symbols-rounded { font-size: 16px; }
+  .wl-fed-status.wl-fed-stale { color: var(--warning, #d97706); font-weight: 600; }
   .wellness-loading {
     display: flex;
     justify-content: center;
