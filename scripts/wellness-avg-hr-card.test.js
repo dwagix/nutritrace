@@ -3,10 +3,10 @@
  * the 'heart' group so a Wellness card renders when the local DB has
  * a positive avg_heart_rate observation.
  *
- * ALL_METRICS is defined inline inside src/routes/Wellness.svelte
- * rather than exported from a lib file, so this test scrapes the raw
- * source instead of importing. It's a light guard against future
- * cleanups accidentally dropping the entry.
+ * ALL_METRICS lives in src/lib/wellness-metrics.js (shared by Wellness
+ * and Statistics) but is written as object literals next to Svelte-only
+ * helpers, so this test scrapes the raw source instead of importing. It's
+ * a light guard against future cleanups accidentally dropping the entry.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,12 +17,16 @@ const wellness = readFileSync(
   path.resolve(process.cwd(), 'src/routes/Wellness.svelte'),
   'utf8'
 );
+const metrics = readFileSync(
+  path.resolve(process.cwd(), 'src/lib/wellness-metrics.js'),
+  'utf8'
+);
 
 test('#205: ALL_METRICS registers an avg_heart_rate entry', () => {
   // Find the specific ALL_METRICS entry for avg_heart_rate. Look for
   // an id: 'avg_heart_rate' object literal in the heart group.
   const entryRegex = /\{\s*id:\s*['"]avg_heart_rate['"][^}]*group:\s*['"]heart['"][^}]*\}/;
-  assert.ok(entryRegex.test(wellness),
+  assert.ok(entryRegex.test(metrics),
     'avg_heart_rate must have an ALL_METRICS entry in the heart group');
 });
 
@@ -32,29 +36,28 @@ test('#205: avg_heart_rate card is distinct from resting_hr', () => {
   // HR is fully-at-rest).
   const rhrRegex = /id:\s*['"]resting_hr['"]/;
   const avgRegex = /id:\s*['"]avg_heart_rate['"]/;
-  assert.ok(rhrRegex.test(wellness), 'resting_hr must still be present');
-  assert.ok(avgRegex.test(wellness), 'avg_heart_rate must be present');
+  assert.ok(rhrRegex.test(metrics), 'resting_hr must still be present');
+  assert.ok(avgRegex.test(metrics), 'avg_heart_rate must be present');
 });
 
 test('#205: avg_heart_rate declares a source so isSourceEnabled can gate it', () => {
   // Without a `sources: [...]` array the card would be permanently
   // hidden by isSourceEnabled. Reporter wants it visible under the
   // Fitbit family (which Health Connect flows through) and Garmin.
-  const block = wellness.match(/\{\s*id:\s*['"]avg_heart_rate['"][^}]*\}/);
+  const block = metrics.match(/\{\s*id:\s*['"]avg_heart_rate['"][^}]*\}/);
   assert.ok(block, 'avg_heart_rate entry not found');
   assert.match(block[0], /sources:\s*\[[^\]]*['"]fitbit['"]/,
     'avg_heart_rate must include the fitbit source (covers Health Connect)');
 });
 
-test('#205: avg_heart_rate carries hideIfEmpty so Fitbit-only users do not see an empty card', () => {
-  // Only Health Connect populates avg_heart_rate in wellness_data today.
-  // Fitbit / Garmin cloud syncs write avg_hr per WORKOUT, not a daily
-  // aggregate. Without hideIfEmpty, a Fitbit-only user would see a
-  // permanent no-data card every day.
-  const block = wellness.match(/\{\s*id:\s*['"]avg_heart_rate['"][^}]*\}/);
+test('fork: avg_heart_rate has no hideIfEmpty, so the card is always shown', () => {
+  // Deliberate fork change (upstream sets hideIfEmpty: true): metric cards
+  // always show, even when empty, so avg_heart_rate is discoverable before
+  // Home Assistant has pushed any data. See CLAUDE.md.
+  const block = metrics.match(/\{\s*id:\s*['"]avg_heart_rate['"][^}]*\}/);
   assert.ok(block, 'avg_heart_rate entry not found');
-  assert.match(block[0], /hideIfEmpty:\s*true/,
-    'avg_heart_rate must set hideIfEmpty until Fitbit/Garmin write daily HR');
+  assert.doesNotMatch(block[0], /hideIfEmpty/,
+    'avg_heart_rate must not set hideIfEmpty in this fork');
 });
 
 test('#205: Heart tab filter honors hideIfEmpty', () => {

@@ -51,10 +51,9 @@ export const ALL_METRICS = [
   // surface. Distinct from Resting Heart Rate (fully at rest) so the two
   // live side by side in the Heart group.
   //
-  // hideIfEmpty: only Health Connect populates avg_heart_rate today (Fitbit
-  // and Garmin cloud syncs write avg_hr per workout, not a daily aggregate).
-  // Honored by the Heart tab's filter so the card only appears on days a
-  // value exists, rather than as a permanent empty card for everyone else.
+  // Fork: deliberately no hideIfEmpty (upstream sets it, since only Health
+  // Connect populates a daily avg_heart_rate there). Every card always shows,
+  // so this one is discoverable before Home Assistant has pushed any data.
   { id: 'avg_heart_rate',    label: 'Average Heart Rate', unit: 'bpm',  group: 'heart', icon: 'monitor_heart',  fmt: v => Math.round(v), sources: ['fitbit','garmin'], desc: 'Average heart rate across the day from your wearable. Rises with activity, stress, and elevated body temperature; useful for spotting an unusually high or low day at a glance.' },
   { id: 'spo2_avg',          label: 'SpO2',               unit: '%',    group: 'heart', icon: 'water_drop',     fmt: v => v.toFixed(1),  sources: ['fitbit','garmin'], desc: 'Blood oxygen saturation measured overnight. Healthy range is typically 95–100%. Dips below 90% may indicate sleep apnea.' },
   { id: 'respiratory_rate',  label: 'Respiratory Rate',   unit: 'brpm', group: 'heart', icon: 'air',            fmt: v => v.toFixed(1),  sources: ['fitbit','garmin'], desc: 'Average breaths per minute during sleep. Normal adult range is 12–20 breaths/min. Elevated values may signal illness or stress.' },

@@ -57,7 +57,7 @@ test('stage names from every bridge map to one vocabulary', () => {
 });
 
 test('only canonical Wellness ids are ever written', () => {
-  const wellness = read('../src/routes/Wellness.svelte');
+  const wellness = read('../src/lib/wellness-metrics.js');
   const canonical = new Set([...wellness.matchAll(/\{ id: '(sleep_[a-z_]+)'/g)].map(m => m[1]));
   const written = new Set(cases.flatMap(c => Object.keys(c.expect)));
   for (const id of written) assert.ok(canonical.has(id), `${id} has no Wellness card`);
