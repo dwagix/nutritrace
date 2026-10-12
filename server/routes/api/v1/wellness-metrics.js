@@ -31,7 +31,7 @@
  *     }
  *   }
  *
- * Only known metric_types are accepted (see METRIC_KEYS below) — this
+ * Only known metric_types are accepted (see lib/wellness-metric-keys.js) — this
  * isn't a generic passthrough like body-measurements' "store whatever's
  * sent" behavior, since wellness_data rows here are keyed only by
  * metric_type with no per-vendor-extras JSON blob to catch unknowns
@@ -41,53 +41,9 @@ import { Router } from 'express';
 import db from '../../../db.js';
 import { wrap } from '../../../logger.js';
 import { requireScope } from '../../../middleware/bearer-auth.js';
+import { METRIC_KEYS } from '../../../lib/wellness-metric-keys.js';
 
 const router = Router();
-
-// Keep in sync with the `id` values of ALL_METRICS in
-// src/routes/Wellness.svelte (activity/sleep/sleep_quality/heart groups
-// — body-group metrics go through body-measurements.js instead, which
-// has its own whitelist). Anything else in the payload is ignored
-// rather than erroring, so a caller sending one extra unrecognized key
-// doesn't fail the whole batch.
-const METRIC_KEYS = new Set([
-  // activity
-  'steps',
-  'distance_km',
-  'floors',
-  'active_minutes',
-  'calories_out',
-  'active_zone_minutes',
-  'moderate_intensity_min',
-  'vigorous_intensity_min',
-  // sleep
-  'sleep_duration_min',
-  'sleep_deep_min',
-  'sleep_light_min',
-  'sleep_rem_min',
-  'sleep_wake_min',
-  'sleep_efficiency',
-  'sleep_score',
-  // sleep_quality
-  'sleep_time_to_fall_asleep_min',
-  'sleep_sound_sleep_min',
-  'sleep_restlessness_min',
-  'sleep_interruptions_min',
-  'sleep_full_awakenings',
-  // heart
-  'resting_hr',
-  'avg_heart_rate',
-  'spo2_avg',
-  'respiratory_rate',
-  'hrv_daily_rmssd',
-  'skin_temp_variation',
-  'vo2_max',
-  'max_hr',
-  // Garmin daily-summary extras
-  'body_battery_high',
-  'body_battery_low',
-  'stress_avg',
-]);
 
 router.post('/', requireScope('write:wellness-metrics'), wrap((req, res) => {
   const { date, source, metrics } = req.body || {};
