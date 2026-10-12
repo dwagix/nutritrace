@@ -7,16 +7,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 
 process.env.DB_PATH = path.join(os.tmpdir(), `body-measurements-diary-${process.pid}-${Date.now()}.db`);
 process.env.NODE_ENV = 'test';
 
+// express lives in server/node_modules, not next to scripts/, and must be the
+// same instance the router imports, so resolve it from the server directory.
+const serverRequire = createRequire(new URL('../server/package.json', import.meta.url));
+
 let db, express, router;
 try {
   ({ default: db } = await import('../server/db.js'));
-  ({ default: express } = await import('express'));
+  express = serverRequire('express');
   ({ default: router } = await import('../server/routes/api/v1/body-measurements.js'));
 } catch (error) {
+  db = null;   // a partial load must not run the suite
   test('behavior suite skipped when server dependencies are unavailable', { skip: true }, () => {});
   console.warn(`[body-measurements-diary] skipped: ${(error?.message || error).split('\n')[0]}`);
 }
