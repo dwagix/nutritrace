@@ -23,6 +23,7 @@
   import FastingWidget from '../components/diary/FastingWidget.svelte';
   import { mealIcon } from '../lib/mealIcon.js';
   import { getDayCollapse, setMealCollapsed } from '../lib/mealCollapse.js';
+  import { activityGoalAdjust } from '../lib/activity-adjust.js';
   import Sheet        from '../components/ui/Sheet.svelte';
   import Dialog       from '../components/ui/Dialog.svelte';
   import ActionSheet  from '../components/ui/ActionSheet.svelte';
@@ -453,6 +454,11 @@
   let _dynamicGoalDate    = null;   // which diary date we fetched for
   // Adaptive TDEE — server-computed; cached once per page load
   let _adaptiveTdee = null;
+  // Typical daily activity per manualActivityPolicy, from the same response.
+  // Adaptive TDEE already contains it, so only the difference from today's
+  // activity may be added to the goal (see _activeAdjust below).
+  let _adaptiveAvgActiveMap = null;
+  $: _adaptiveAvgActive = _adaptiveAvgActiveMap?.[$manualActivityPolicy || 'wearable_wins'] ?? null;
   // #203: resolve per-weekday when the user has "different target per
   // weekday" turned on. See src/lib/goal-resolver.js for the full
   // rationale and the shared behavior with Statistics.
@@ -476,7 +482,8 @@
     try {
       const r = await NtApi.get('/api/goals/adaptive-tdee');
       _adaptiveTdee = r?.ready ? r.tdee : null;
-    } catch { _adaptiveTdee = null; }
+      _adaptiveAvgActiveMap = r?.ready ? (r.avgActiveKcal ?? null) : null;
+    } catch { _adaptiveTdee = null; _adaptiveAvgActiveMap = null; }
   }
 
   $: if ($calorieGoalMode === 'dynamic' && $currentDate) _loadDynamicGoal($currentDate);
@@ -492,7 +499,19 @@
   // Macro percentages always use the base goal so protein/carbs/fat targets
   // don't drift when you log a workout.
   $: _effectiveActive = ($diaryShowActivity && $calorieAdjustFromActivity ? ($activitySummary?.effective || 0) : 0);
-  $: caloriesGoalAdjusted = caloriesGoal + _effectiveActive;
+  // Fork: Adaptive TDEE is learned from intake + weight trend, so it already
+  // contains the user's AVERAGE activity. Adding all of today's activity would
+  // count that average twice. In Adaptive mode add only today's activity
+  // relative to typical: above-average days raise the goal, below-average
+  // days lower it. Other modes (and Adaptive before it is ready, or against a
+  // server that does not send avgActiveKcal) add the full amount as before.
+  $: ({ typical: _typicalActive, adjust: _activeAdjust } = activityGoalAdjust({
+       adjustOn:      $diaryShowActivity && $calorieAdjustFromActivity,
+       effective:     _effectiveActive,
+       adaptiveReady: $calorieGoalMode === 'adaptive' && _adaptiveTdee != null,
+       avgActive:     _adaptiveAvgActive,
+     }));
+  $: caloriesGoalAdjusted = caloriesGoal + _activeAdjust;
 
   $: _hasBottomNav = $navStyle === 'bottom' || $navStyle === 'both';
 
@@ -1907,6 +1926,7 @@
   {#if $diaryRailShowActivityWidget}
     <ActivityImpactWidget
       activeKcal={_effectiveActive}
+      typicalActiveKcal={_typicalActive}
       baseGoalKcal={caloriesGoal}
       adjustedGoalKcal={caloriesGoalAdjusted}
       energyUnit={$energyUnit}
@@ -2010,6 +2030,7 @@
       calorieGoalFactor={$calorieGoalFactor}
       adjustFromActivity={$diaryShowActivity && $calorieAdjustFromActivity}
       activityPolicy={$manualActivityPolicy || 'wearable_wins'}
+      activeBaseline={_typicalActive}
       refreshKey={_weekStripRefreshKey}
       onSelectDate={(iso) => _loadEntryTracked(iso)}
       onDropMeal={_onDropMealOnWeekDay}
@@ -2639,7 +2660,7 @@
           {#if _totalsMode === 'remaining'}
             {@const _remEnergy = Nutrition.displayEnergy(caloriesGoalAdjusted - Math.round($_calTween), $energyUnit)}
             <span class="dbb-num">{_remEnergy.value.toLocaleString()}</span>
-            <span class="dbb-unit">{#if $calorieGoalMode === 'dynamic' && _dynamicCaloriesOut != null}⚡ {:else if $calorieGoalMode === 'adaptive' && _adaptiveTdee != null}📈 {/if}{#if _effectiveActive > 0}<span class="material-symbols-rounded dbb-activity-cue" title="Adjusted for activity">directions_run</span> {/if}{_remEnergy.unit} left</span>
+            <span class="dbb-unit">{#if $calorieGoalMode === 'dynamic' && _dynamicCaloriesOut != null}⚡ {:else if $calorieGoalMode === 'adaptive' && _adaptiveTdee != null}📈 {/if}{#if _activeAdjust !== 0}<span class="material-symbols-rounded dbb-activity-cue" title="Adjusted for activity">directions_run</span> {/if}{_remEnergy.unit} left</span>
           {:else}
             {@const _eatEnergy = Nutrition.displayEnergy($_calTween, $energyUnit)}
             <span class="dbb-num">{_eatEnergy.value.toLocaleString()}</span>
@@ -2661,12 +2682,12 @@
           </span>
         </div>
       </div>
-      {#if _effectiveActive > 0 && _totalsMode === 'remaining'}
+      {#if _activeAdjust !== 0 && _totalsMode === 'remaining'}
         {@const _gE = Nutrition.displayEnergy(caloriesGoal, $energyUnit)}
-        {@const _aE = Nutrition.displayEnergy(_effectiveActive, $energyUnit)}
+        {@const _aE = Nutrition.displayEnergy(Math.abs(_activeAdjust), $energyUnit)}
         {@const _adjE = Nutrition.displayEnergy(caloriesGoalAdjusted, $energyUnit)}
         <div class="dbb-activity-breakdown text-3 text-sm">
-          Goal {_gE.value.toLocaleString()} <span style="color:#4FFFB0">+ Activity {_aE.value.toLocaleString()}</span> = {_adjE.value.toLocaleString()} {_adjE.unit}
+          Goal {_gE.value.toLocaleString()} <span style="color:{_activeAdjust > 0 ? '#4FFFB0' : 'var(--warning, #d97706)'}">{_activeAdjust > 0 ? '+' : '−'} Activity{_typicalActive > 0 ? ' vs typical' : ''} {_aE.value.toLocaleString()}</span> = {_adjE.value.toLocaleString()} {_adjE.unit}
         </div>
       {/if}
       <!-- Water row -->

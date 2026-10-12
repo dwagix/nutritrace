@@ -20,6 +20,7 @@
   import { Nutrition } from '../../lib/nutrition.js';
 
   export let activeKcal        = 0;         // _effectiveActive
+  export let typicalActiveKcal = 0;         // Adaptive: average activity already inside the learned TDEE
   export let baseGoalKcal      = 2000;      // caloriesGoal
   export let adjustedGoalKcal  = 2000;      // caloriesGoalAdjusted
   export let energyUnit        = 'kcal';
@@ -36,6 +37,7 @@
   $: adjustedE = Nutrition.displayEnergy(adjustedGoalKcal, energyUnit);
   $: burnE     = Nutrition.displayEnergy(dynamicCaloriesOut ?? 0, energyUnit);
   $: tdeeE     = Nutrition.displayEnergy(adaptiveTdee ?? 0, energyUnit);
+  $: typicalE  = Nutrition.displayEnergy(typicalActiveKcal ?? 0, energyUnit);
 </script>
 
 {#if shouldRender}
@@ -77,10 +79,16 @@
           <span class="aw-label">Learned TDEE (35-day)</span>
           <span class="aw-val">{tdeeE.value.toLocaleString()} {tdeeE.unit}</span>
         </div>
-        {#if hasActivity}
+        {#if hasActivity || typicalActiveKcal > 0}
           <div class="aw-row">
             <span class="aw-label"><span class="aw-plus">+</span> Today's active</span>
             <span class="aw-val aw-val-active">{activeE.value.toLocaleString()} {activeE.unit}</span>
+          </div>
+        {/if}
+        {#if typicalActiveKcal > 0}
+          <div class="aw-row" title="Your learned TDEE already includes your usual activity, so it is taken out here to avoid counting it twice.">
+            <span class="aw-label"><span class="aw-plus">−</span> Typical activity (in TDEE)</span>
+            <span class="aw-val">{typicalE.value.toLocaleString()} {typicalE.unit}</span>
           </div>
         {/if}
         <div class="aw-row aw-row-total">

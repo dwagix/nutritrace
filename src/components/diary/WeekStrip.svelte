@@ -50,6 +50,7 @@
   export let currentDate     = localDateStr();
   export let calorieGoal     = 2000;               // base goal (fixed / adaptive result). Per-day dynamic + activity overrides layer on top.
   export let refreshKey      = 0;                  // bump to force reload from parent
+  export let activeBaseline  = 0;                  // typical daily activity already inside the base goal (Adaptive mode); subtracted from each day's activity
   export let calorieGoalMode = 'fixed';            // 'fixed' | 'dynamic' | 'adaptive' — dynamic triggers per-day calories-out fetch
   export let calorieGoalFactor = 1;                // dynamic-mode multiplier applied to each day's calories_out
   export let adjustFromActivity = false;           // when true, add each day's own activity kcal to that day's goal (#180)
@@ -302,7 +303,7 @@
       if (needDynamic && dynamicOuts[i]?.calories_out != null) {
         base = Math.round(Number(dynamicOuts[i].calories_out) * (Number(calorieGoalFactor) || 1));
       }
-      newGoal.set(iso, base + (needActive ? active : 0));
+      newGoal.set(iso, base + (needActive ? active - (Number(activeBaseline) || 0) : 0));
     }
     goalByDate = newGoal;
     activeByDate = newActive;
@@ -315,7 +316,7 @@
   // parent bumps refreshKey (activity + food edits), or when any of
   // the mode / policy / toggle props change upstream. Cheap when
   // neither adjustment is active — the function early-returns.
-  $: currentDate, refreshKey, adjustFromActivity, activityPolicy, calorieGoalMode, calorieGoalFactor, calorieGoal, _loadWeekAdjustments();
+  $: currentDate, refreshKey, adjustFromActivity, activityPolicy, activeBaseline, calorieGoalMode, calorieGoalFactor, calorieGoal, _loadWeekAdjustments();
 </script>
 
 <nav class="week-strip" aria-label="Week strip">
