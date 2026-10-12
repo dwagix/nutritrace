@@ -22,6 +22,7 @@
   import QuickCaloriesSheet from '../components/diary/QuickCaloriesSheet.svelte';
   import FastingWidget from '../components/diary/FastingWidget.svelte';
   import { mealIcon } from '../lib/mealIcon.js';
+  import { getDayCollapse, setMealCollapsed } from '../lib/mealCollapse.js';
   import Sheet        from '../components/ui/Sheet.svelte';
   import Dialog       from '../components/ui/Dialog.svelte';
   import ActionSheet  from '../components/ui/ActionSheet.svelte';
@@ -1279,6 +1280,19 @@
   $: mealsLeft  = mealLayout.filter(m => m.mealIdx % 2 === 0);
   $: mealsRight = mealLayout.filter(m => m.mealIdx % 2 === 1);
 
+  // Fork: collapsible meal cards (pattern from LiftTrace's ExerciseCard).
+  // A collapsed meal hides its items and the add row but keeps the header
+  // and the macro summary footer. Collapsed is the DEFAULT: a meal is open
+  // only after the user explicitly expands it ('expanded'). Per-device,
+  // persisted by date + meal slot.
+  let mealCollapse = {};
+  $: mealCollapse = getDayCollapse($currentDate);
+  function toggleMealCollapse(mealIdx) {
+    const next = mealCollapse[mealIdx] === 'expanded';   // open -> collapse, else -> expand
+    setMealCollapsed($currentDate, mealIdx, next);
+    mealCollapse = { ...mealCollapse, [mealIdx]: next ? 'collapsed' : 'expanded' };
+  }
+
   // Nutrition bar: visible NUTRIMENTS that have goals set
   $: nutritionBarItems = (() => {
     if (!$diaryShowNutritionBar) return [];
@@ -2119,9 +2133,11 @@
       {@const mealIdx = m.mealIdx}
       {@const items   = m.items}
       {@const isEmpty = m.isEmpty}
+      {@const _collapsed = !isEmpty && mealCollapse[mealIdx] !== 'expanded'}
       <section
         class="meal-group card"
         class:empty={isEmpty}
+        class:meal-collapsed={_collapsed}
         class:dragging={_dragMealIdx === mealIdx}
         class:item-drop-target={_itemDropTarget === mealIdx}
         id="meal-{mealIdx}"
@@ -2157,7 +2173,16 @@
               {_mealEnergy.value.toLocaleString()} {_mealEnergy.unit}
             </span>
           {/if}
-          <button class="btn-icon ml-auto meal-menu-btn" on:click={() => openMealActionSheet(mealIdx)} aria-label="Meal actions for {meal}" title="Meal actions">
+          {#if !isEmpty}
+            <button class="btn-icon ml-auto meal-collapse-btn" class:meal-collapse-on={_collapsed}
+              on:click|stopPropagation={() => toggleMealCollapse(mealIdx)}
+              aria-expanded={!_collapsed}
+              aria-label={$_(_collapsed ? 'diary.meal_expand_aria' : 'diary.meal_collapse_aria', { values: { meal } })}
+              title={$_(_collapsed ? 'diary.meal_expand' : 'diary.meal_collapse')}>
+              <span class="material-symbols-rounded">expand_more</span>
+            </button>
+          {/if}
+          <button class="btn-icon meal-menu-btn" class:ml-auto={isEmpty} on:click={() => openMealActionSheet(mealIdx)} aria-label="Meal actions for {meal}" title="Meal actions">
             <span class="material-symbols-rounded">more_vert</span>
           </button>
           {#if $showQuickCalories}
@@ -2175,7 +2200,7 @@
             <span class="material-symbols-rounded meal-empty-icon" style="color:{mealColor(mealIdx)}">add_circle</span>
             <span class="meal-empty-text">{$_('diary.empty.tap_to_add_food')}</span>
           </button>
-        {:else}
+        {:else if !_collapsed}
           {@const _foodItems  = items.filter(it => it.type !== 'quick_calories')}
           {@const _quickItems = items.filter(it => it.type === 'quick_calories')}
           {@const _quickTotalKcal = _quickItems.reduce((s, it) => s + (it.nutrition?.calories || 0), 0)}
@@ -2350,7 +2375,7 @@
             {/if}
           </div>
         {/if}
-        {#if items.length > 0}
+        {#if items.length > 0 && !_collapsed}
           <button class="meal-add-row" on:click={() => openAddFood(mealIdx)}>
             <span class="material-symbols-rounded">add</span>
             <span>{$_('diary.add_food')}</span>
@@ -4247,6 +4272,15 @@
     opacity: 0.9;
   }
   .meal-name   { font-size: 15px; font-weight: 600; color: var(--text-1); }
+  .meal-collapse-btn { color: var(--text-3); }
+  .meal-collapse-btn .material-symbols-rounded { transition: transform 0.15s ease; }
+  .meal-collapse-btn.meal-collapse-on .material-symbols-rounded { transform: rotate(-90deg); }
+  @media (prefers-reduced-motion: reduce) {
+    .meal-collapse-btn .material-symbols-rounded { transition: none; }
+  }
+  /* Collapsed: header is the card's top edge, so drop its divider when no
+     summary footer follows. */
+  .meal-collapsed .meal-header:last-child { border-bottom: none; }
   .meal-kcal   { margin-left: 4px; }
   .ml-auto     { margin-left: auto; }
   .meal-empty  {
