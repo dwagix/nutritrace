@@ -196,21 +196,22 @@
          ? Math.round(_adaptive.tdee * $calorieGoalFactor)
        : _fixedGoal;
 
-  // The Fitbit /data endpoint already merges Fitbit + Health Connect rows,
-  // and Google Health Web API writes its rows tagged source='fitbit'. So
-  // one call covers fitbit + google-health + health-connect; the shared
-  // derived store ($fitbitFamilyEnabled) is the canonical gate.
+  // The Fitbit /data endpoint already merges Fitbit + Health Connect +
+  // federation rows, and Google Health Web API writes its rows tagged
+  // source='fitbit'. Not gated on a connected provider: the server scopes
+  // both calls to this user, and federation-only setups (Home Assistant
+  // pushing via write:wellness-metrics) have no provider toggled on.
   async function loadWellnessToday() {
     _wellnessLoaded = true;
     let fitbit = {}, garmin = {};
-    try { if ($fitbitFamilyEnabled) { const r = await NtApi.get(`/api/wellness/fitbit/data?date=${today}`); fitbit = r[today] || {}; } } catch {}
-    try { if ($garminEnabled) { const r = await NtApi.get(`/api/wellness/garmin/data?date=${today}`); garmin = r[today] || {}; } } catch {}
+    try { const r = await NtApi.get(`/api/wellness/fitbit/data?date=${today}`); fitbit = r[today] || {}; } catch {}
+    try { const r = await NtApi.get(`/api/wellness/garmin/data?date=${today}`); garmin = r[today] || {}; } catch {}
     todayWellness = { ...fitbit, ...garmin };
   }
 
-  // Fire as soon as settings stores resolve true — avoids the first-load race
-  // where onMount ran before settings loaded from server (both start false).
-  $: if (($fitbitFamilyEnabled || $garminEnabled) && !_wellnessLoaded) loadWellnessToday();
+  // Fire as soon as the wellness setting resolves true — avoids the first-load
+  // race where onMount ran before settings loaded from server (starts false).
+  $: if ($wellnessEnabled && !_wellnessLoaded) loadWellnessToday();
 
   // Half open like a book, the targets go on the left-hand page and the
   // preview on the right, with the crease as the gutter between them: the
