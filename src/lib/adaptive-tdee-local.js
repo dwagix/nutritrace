@@ -15,9 +15,12 @@
  *   3. Require ≥21 valid days. Otherwise ready=false.
  *   4. slope_kg_per_day × 7700 kcal/kg = daily energy balance.
  *   5. tdee = avg_intake − balance.
+ *   6. avgActiveKcal = typical daily activity over the window (today
+ *      excluded), per manualActivityPolicy; see active-average.js.
  */
 
 import { getDb, LOCAL_USER_ID } from './db-native.js';
+import { averageActiveByPolicy } from './active-average.js';
 
 const KCAL_PER_KG = 7700;
 const LB_TO_KG = 1 / 2.20462;
@@ -168,6 +171,7 @@ export async function computeAdaptiveTdeeLocal(opts = {}) {
       trendKgPerWeek: null,
       confidence: null,
       weightSource: null,
+      avgActiveKcal: null,
       computedAt: new Date().toISOString(),
     };
   }
@@ -183,6 +187,8 @@ export async function computeAdaptiveTdeeLocal(opts = {}) {
   const confidence = Math.max(0.5, Math.min(0.95, 0.5 * coverage + 0.5 * r2));
   const weightSource = usedWellness && usedManual ? 'mixed' : usedWellness ? 'wellness' : 'manual';
 
+  const avgActiveKcal = await _typicalActiveLocal(db, series.slice(0, -1).map(s => s.date));
+
   return {
     ready: true,
     daysAvailable,
@@ -192,6 +198,26 @@ export async function computeAdaptiveTdeeLocal(opts = {}) {
     trendKgPerWeek: Math.round(slopeKgPerDay * 7 * 100) / 100,
     confidence: Math.round(confidence * 100) / 100,
     weightSource,
+    avgActiveKcal,
     computedAt: new Date().toISOString(),
   };
+}
+
+async function _typicalActiveLocal(db, dates) {
+  if (!dates.length) return null;
+  const from = dates[0], to = dates[dates.length - 1];
+  const manualRes = await db.query(
+    `SELECT date, SUM(kcal) AS v FROM activity_log
+     WHERE user_id = ? AND date >= ? AND date <= ? AND deleted_at IS NULL
+     GROUP BY date`,
+    [LOCAL_USER_ID, from, to]
+  );
+  const wearableRes = await db.query(
+    `SELECT date, MAX(value) AS v FROM wellness_data
+     WHERE user_id = ? AND metric_type = 'active_calories' AND date >= ? AND date <= ?
+     GROUP BY date`,
+    [LOCAL_USER_ID, from, to]
+  );
+  const toMap = res => new Map((res?.values || []).map(r => [r.date, r.v]));
+  return averageActiveByPolicy(toMap(manualRes), toMap(wearableRes), dates);
 }

@@ -18,6 +18,12 @@
  * extrapolate at the edges — the first and last weight have to be real
  * measurements.
  *
+ * Typical activity: the TDEE above already contains the user's average daily
+ * activity, so the result also carries avgActiveKcal (per manualActivityPolicy)
+ * for the last windowDays-1 days (today excluded: it is still in progress).
+ * The Diary adds only (today's activity − avgActiveKcal) to the goal in
+ * Adaptive mode, instead of the whole day, which would count it twice.
+ *
  * Readiness gate: need ≥21 days where BOTH intake and weight are present
  * (after interpolation). 21 is enough signal to detect a real trend through
  * day-to-day noise without forcing 35 perfect days.
@@ -25,6 +31,7 @@
 
 import db from '../db.js';
 import { logger } from '../logger.js';
+import { averageActiveByPolicy } from './active-average.js';
 
 const KCAL_PER_KG = 7700;
 const LB_TO_KG = 1 / 2.20462;
@@ -192,6 +199,7 @@ export function computeAdaptiveTdee(userId, opts = {}) {
       trendKgPerWeek: null,
       confidence: null,
       weightSource: null,
+      avgActiveKcal: null,
       computedAt: new Date().toISOString(),
     };
   }
@@ -209,6 +217,8 @@ export function computeAdaptiveTdee(userId, opts = {}) {
   // --- Confidence: blend coverage % and R² fit quality ---
   const coverage = daysAvailable / windowDays;
   const confidence = Math.max(0.5, Math.min(0.95, 0.5 * coverage + 0.5 * r2));
+
+  const avgActiveKcal = _typicalActive(userId, series.slice(0, -1).map(s => s.date));
 
   const weightSource = usedWellness && usedManual ? 'mixed' : usedWellness ? 'wellness' : 'manual';
 
@@ -228,6 +238,26 @@ export function computeAdaptiveTdee(userId, opts = {}) {
     trendKgPerWeek: Math.round(slopeKgPerDay * 7 * 100) / 100,
     confidence: Math.round(confidence * 100) / 100,
     weightSource,
+    avgActiveKcal,
     computedAt: new Date().toISOString(),
   };
+}
+
+/** Typical daily activity kcal over `dates`, under each manualActivityPolicy.
+ *  Reads the same tables as active-calories.js (manual activity_log +
+ *  wearable active_calories). */
+function _typicalActive(userId, dates) {
+  if (!dates.length) return null;
+  const from = dates[0], to = dates[dates.length - 1];
+  const manualByDate = new Map(db.prepare(
+    `SELECT date, SUM(kcal) AS v FROM activity_log
+      WHERE user_id = ? AND date >= ? AND date <= ? AND deleted_at IS NULL
+      GROUP BY date`
+  ).all(userId, from, to).map(r => [r.date, r.v]));
+  const wearableByDate = new Map(db.prepare(
+    `SELECT date, MAX(value) AS v FROM wellness_data
+      WHERE user_id = ? AND metric_type = 'active_calories' AND date >= ? AND date <= ?
+      GROUP BY date`
+  ).all(userId, from, to).map(r => [r.date, r.v]));
+  return averageActiveByPolicy(manualByDate, wearableByDate, dates);
 }
