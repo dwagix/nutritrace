@@ -894,18 +894,18 @@
 
   // Per-macro goals (absolute) for bottom bar remaining display.
   // #203: resolve per-weekday when the macro has its own weekday split.
-  function _macroGoal(id, dateStr) {
+  function _macroGoal(id, dateStr, calGoal) {
     const g = $goals?.[id]; if (!g) return null;
     const raw = resolveGoalFor(g, dateStr); if (raw == null) return null;
     if (g.isPercent) {
       const density = {fat:9,'saturated-fat':9,carbohydrates:4,sugars:4,proteins:4}[id];
-      return density ? Math.round(caloriesGoal * raw / 100 / density) : raw;
+      return density ? Math.round(calGoal * raw / 100 / density) : raw;
     }
     return raw;
   }
-  $: fatGoal   = _macroGoal('fat', $currentDate);
-  $: carbGoal  = _macroGoal('carbohydrates', $currentDate);
-  $: protGoal  = _macroGoal('proteins', $currentDate);
+  $: fatGoal   = _macroGoal('fat', $currentDate, caloriesGoalAdjusted);
+  $: carbGoal  = _macroGoal('carbohydrates', $currentDate, caloriesGoalAdjusted);
+  $: protGoal  = _macroGoal('proteins', $currentDate, caloriesGoalAdjusted);
   $: calPct    = Math.min(100, ((totals.calories||0) / caloriesGoalAdjusted) * 100);
 
   function formatDate(d) {
@@ -1325,7 +1325,7 @@
           const raw = resolveGoalFor(g, $currentDate);
           if (raw != null && g.isPercent) {
             const density = {fat:9,'saturated-fat':9,carbohydrates:4,sugars:4,proteins:4}[n.id];
-            const calGoal = resolveGoalFor($goals.calories, $currentDate) ?? 2000;
+            const calGoal = caloriesGoalAdjusted;
             tgt = density ? Math.round(calGoal * raw / 100 / density) : raw;
           } else {
             tgt = raw;
