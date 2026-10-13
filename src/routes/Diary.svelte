@@ -1940,6 +1940,7 @@
       typicalActiveKcal={_typicalActive}
       baseGoalKcal={caloriesGoal}
       adjustedGoalKcal={caloriesGoalAdjusted}
+      calorieGoalFactor={$calorieGoalFactor}
       energyUnit={$energyUnit}
       calorieGoalMode={$calorieGoalMode}
       dynamicCaloriesOut={_dynamicCaloriesOut}

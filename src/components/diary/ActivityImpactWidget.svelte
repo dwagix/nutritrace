@@ -23,6 +23,7 @@
   export let typicalActiveKcal = 0;         // Adaptive: average activity already inside the learned TDEE
   export let baseGoalKcal      = 2000;      // caloriesGoal
   export let adjustedGoalKcal  = 2000;      // caloriesGoalAdjusted
+  export let calorieGoalFactor = 1;         // multiplier applied to Dynamic burn / Adaptive TDEE
   export let energyUnit        = 'kcal';
   export let calorieGoalMode   = 'fixed';   // 'fixed' | 'dynamic' | 'adaptive'
   export let dynamicCaloriesOut = null;     // raw wearable burn
@@ -38,6 +39,9 @@
   $: burnE     = Nutrition.displayEnergy(dynamicCaloriesOut ?? 0, energyUnit);
   $: tdeeE     = Nutrition.displayEnergy(adaptiveTdee ?? 0, energyUnit);
   $: typicalE  = Nutrition.displayEnergy(typicalActiveKcal ?? 0, energyUnit);
+  // What the goal factor adds to (or takes from) the learned TDEE, taken from the
+  // displayed figures so the rows on screen add up to the adjusted goal.
+  $: factorDelta = baseE.value - tdeeE.value;
 </script>
 
 {#if shouldRender}
@@ -64,7 +68,7 @@
         </div>
         {#if hasActivity}
           <div class="aw-row">
-            <span class="aw-label"><span class="aw-plus">+</span> Today's active</span>
+            <span class="aw-label"><span class="aw-plus">+</span> Today's activity</span>
             <span class="aw-val aw-val-active">{activeE.value.toLocaleString()} {activeE.unit}</span>
           </div>
         {/if}
@@ -79,9 +83,15 @@
           <span class="aw-label">Learned TDEE (35-day)</span>
           <span class="aw-val">{tdeeE.value.toLocaleString()} {tdeeE.unit}</span>
         </div>
+        {#if factorDelta !== 0}
+          <div class="aw-row" title="Your learned TDEE is multiplied by your calorie goal factor to set the base goal.">
+            <span class="aw-label"><span class="aw-plus">×</span> Goal factor {calorieGoalFactor}</span>
+            <span class="aw-val">{factorDelta > 0 ? "+" : "−"}{Math.abs(factorDelta).toLocaleString()} {tdeeE.unit}</span>
+          </div>
+        {/if}
         {#if hasActivity || typicalActiveKcal > 0}
           <div class="aw-row">
-            <span class="aw-label"><span class="aw-plus">+</span> Today's active</span>
+            <span class="aw-label"><span class="aw-plus">+</span> Today's activity</span>
             <span class="aw-val aw-val-active">{activeE.value.toLocaleString()} {activeE.unit}</span>
           </div>
         {/if}
@@ -99,7 +109,7 @@
     {:else if hasActivity}
       <div class="aw-body">
         <div class="aw-row">
-          <span class="aw-label">Today's active kcal</span>
+          <span class="aw-label">Today's activity</span>
           <span class="aw-val aw-val-active">{activeE.value.toLocaleString()} {activeE.unit}</span>
         </div>
         <div class="aw-row">
