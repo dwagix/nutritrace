@@ -8,6 +8,7 @@
   import DateInput  from '../components/ui/DateInput.svelte';
   import { resolveAssetUrl, isNative, getServerUrl } from '../lib/platform.js';
   import { resolveGoalFor } from '../lib/goal-resolver.js';
+  import { goalBreakdown } from '../lib/goal-breakdown.js';
   import { fade, slide, fly } from 'svelte/transition';
   import { tweened } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
@@ -496,8 +497,8 @@
   // Adjusts the displayed calories budget when calorieAdjustFromActivity is
   // on; otherwise the activity section still shows the burn but the goal
   // stays at its base value (cleanest for fixed-budget / cutting workflows).
-  // Macro percentages always use the base goal so protein/carbs/fat targets
-  // don't drift when you log a workout.
+  // Percent macro goals follow the activity-ADJUSTED goal (see _macroGoal), so
+  // protein/carbs/fat grams move with the day's activity adjustment.
   $: _effectiveActive = ($diaryShowActivity && $calorieAdjustFromActivity ? ($activitySummary?.effective || 0) : 0);
   // Fork: Adaptive TDEE is learned from intake + weight trend, so it already
   // contains the user's AVERAGE activity. Adding all of today's activity would
@@ -512,6 +513,16 @@
        avgActive:     _adaptiveAvgActive,
      }));
   $: caloriesGoalAdjusted = caloriesGoal + _activeAdjust;
+
+  // "Why is my goal X today?" sheet. Every input is listed here (not read
+  // inside a function) so the sheet stays in step with the on-screen goal.
+  let showGoalWhy = false;
+  $: _goalWhy = goalBreakdown({
+       mode: $calorieGoalMode, factor: $calorieGoalFactor, base: caloriesGoal,
+       dynamicCaloriesOut: _dynamicCaloriesOut, adaptiveTdee: _adaptiveTdee,
+       adjustOn: $diaryShowActivity && $calorieAdjustFromActivity,
+       effective: _effectiveActive, avgActive: _adaptiveAvgActive,
+     });
 
   $: _hasBottomNav = $navStyle === 'bottom' || $navStyle === 'both';
 
@@ -2682,13 +2693,19 @@
           </span>
         </div>
       </div>
-      {#if _activeAdjust !== 0 && _totalsMode === 'remaining'}
+      {#if _totalsMode === 'remaining'}
         {@const _gE = Nutrition.displayEnergy(caloriesGoal, $energyUnit)}
         {@const _aE = Nutrition.displayEnergy(Math.abs(_activeAdjust), $energyUnit)}
         {@const _adjE = Nutrition.displayEnergy(caloriesGoalAdjusted, $energyUnit)}
-        <div class="dbb-activity-breakdown text-3 text-sm">
-          Goal {_gE.value.toLocaleString()} <span style="color:{_activeAdjust > 0 ? '#4FFFB0' : 'var(--warning, #d97706)'}">{_activeAdjust > 0 ? '+' : '−'} Activity{_typicalActive > 0 ? ' vs typical' : ''} {_aE.value.toLocaleString()}</span> = {_adjE.value.toLocaleString()} {_adjE.unit}
-        </div>
+        <button type="button" class="dbb-activity-breakdown text-3 text-sm" on:click={() => showGoalWhy = true}
+                aria-label="How is my calorie goal worked out?">
+          {#if _activeAdjust !== 0}
+            Goal {_gE.value.toLocaleString()} <span style="color:{_activeAdjust > 0 ? '#4FFFB0' : 'var(--warning, #d97706)'}">{_activeAdjust > 0 ? '+' : '−'} Activity{_typicalActive > 0 ? ' vs typical' : ''} {_aE.value.toLocaleString()}</span> = {_adjE.value.toLocaleString()} {_adjE.unit}
+          {:else}
+            Goal {_gE.value.toLocaleString()} {_gE.unit}
+          {/if}
+          <span class="material-symbols-rounded dbb-why-icon">info</span>
+        </button>
       {/if}
       <!-- Water row -->
       {#if _waterShowInDiary}
@@ -3342,6 +3359,38 @@
 {/if}
 
 <!-- Per-meal nutrition totals sheet -->
+<!-- Why is my calorie goal what it is -->
+<Sheet bind:open={showGoalWhy} title="Today's calorie goal" overlayClose on:close={() => showGoalWhy = false}>
+  {@const _w = _goalWhy}
+  {@const _e = (n) => Nutrition.displayEnergy(n, $energyUnit)}
+  <div class="gw-body">
+    <div class="gw-row">
+      <span>
+        {#if _w.basis === 'adaptive'}Adaptive TDEE{:else if _w.basis === 'dynamic'}Yesterday's calories out{:else}Fixed goal{/if}
+        {#if _w.source != null && _w.factor !== 1} × {_w.factor}{/if}
+      </span>
+      <span>{_e(_w.base).value.toLocaleString()} {_e(_w.base).unit}</span>
+    </div>
+    {#if _w.fallback === 'adaptive-not-ready'}
+      <p class="gw-note">Adaptive is selected but hasn't learned enough yet, so your fixed goal is used for now.</p>
+    {:else if _w.fallback === 'dynamic-no-data'}
+      <p class="gw-note">Dynamic is selected but no calories-out value has arrived yet, so your fixed goal is used for now.</p>
+    {/if}
+    {#if _w.adjustOn}
+      <div class="gw-row"><span>Activity today</span><span>{_e(_w.effective).value.toLocaleString()} {_e(_w.effective).unit}</span></div>
+      {#if _w.basis === 'adaptive'}
+        <div class="gw-row"><span>Typical activity (last 34 days)</span><span>− {_e(_w.typical).value.toLocaleString()} {_e(_w.typical).unit}</span></div>
+        <p class="gw-sub">Adaptive TDEE already includes your typical activity, so only the difference from typical changes the goal. A rest day lowers it.</p>
+      {/if}
+      <div class="gw-row"><span>Adjustment</span><span>{_w.adjust > 0 ? '+' : _w.adjust < 0 ? '−' : ''}{_e(Math.abs(_w.adjust)).value.toLocaleString()} {_e(Math.abs(_w.adjust)).unit}</span></div>
+    {:else}
+      <p class="gw-sub">Adjust calories from activity is off, so the goal stays at its base value.</p>
+    {/if}
+    <div class="gw-row gw-total"><span>Goal for today</span><span>{_e(_w.adjusted).value.toLocaleString()} {_e(_w.adjusted).unit}</span></div>
+    <p class="gw-note">Percent-based macro goals are worked out from this adjusted goal. Gram-based goals don't change.</p>
+  </div>
+</Sheet>
+
 <Sheet open={mealTotalsIdx != null} title={mealTotalsIdx != null ? `${meals[mealTotalsIdx]} totals` : ''}
   on:close={() => mealTotalsIdx = null}>
   {@const _nsMealEnergy = Nutrition.displayEnergy(_mealTotals.calories || 0, $energyUnit)}
@@ -3400,8 +3449,15 @@
   /* Inline cue + math breakdown for the activity-adjusted calorie budget */
   :global(.dbb-activity-cue) { font-size: 14px; vertical-align: middle; opacity: 0.85; }
   :global(.dbb-activity-breakdown) {
-    padding: 4px 12px 8px; text-align: right;
+    display: block; width: 100%; padding: 4px 12px 8px; text-align: right;
+    background: none; border: 0; font: inherit; color: inherit; cursor: pointer;
   }
+  :global(.dbb-why-icon) { font-size: 14px; vertical-align: middle; opacity: 0.6; margin-left: 2px; }
+  .gw-body { padding: 4px 16px 20px; display: flex; flex-direction: column; gap: 6px; }
+  .gw-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .gw-row.gw-total { border-top: 1px solid var(--border, rgba(128,128,128,0.3)); padding-top: 8px; margin-top: 4px; font-weight: 600; }
+  .gw-sub { font-size: 0.85em; opacity: 0.7; margin: 0 0 6px; }
+  .gw-note { font-size: 0.85em; opacity: 0.8; margin: 6px 0 0; }
 
   /* Activity section — same shell as meal-group, footer mirrors meal-macro-footer
      but with green segments per entry instead of P/C/F. */
